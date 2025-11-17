@@ -128,59 +128,16 @@ SRTMAnalyse <- function(data,
     dplyr::ungroup()
 
   # --- fit group-specific linear models to get y2_exp ----------------------
-  coefs <- df %>%
-    dplyr::group_by(baseGroup, trajGroup) %>%
-    dplyr::group_modify(function(.x, .g) {
-      # rows with both y0 and y1 present
-      ok <- !is.na(.x[[y0_name]]) & !is.na(.x[[y1_name]])
-      if (sum(ok) < 2L) {
-        return(tibble::tibble(
-          intercept01 = NA_real_,
-          slope01     = NA_real_
-        ))
-      }
-
-      long_df <- .x[ok, c(id_col, y0_name, y1_name)] %>%
-        tidyr::pivot_longer(
-          cols      = tidyselect::all_of(c(y0_name, y1_name)),
-          names_to  = "tp",
-          values_to = "y"
-        ) %>%
-        dplyr::mutate(
-          t = dplyr::case_when(
-            tp == y1_name ~ 0,
-            tp == y0_name ~ -dt01,
-            TRUE ~ NA_real_
-          )
-        ) %>%
-        dplyr::filter(!is.na(t), !is.na(y))
-
-      if (nrow(long_df) < 2L || length(unique(long_df$t)) < 2L) {
-        return(tibble::tibble(
-          intercept01 = NA_real_,
-          slope01     = NA_real_
-        ))
-      }
-
-      mod <- stats::lm(y ~ t, data = long_df)
-      cf  <- stats::coef(mod)
-
-      intercept01 <- unname(cf["(Intercept)"])
-      slope01     <- unname(cf["t"])
-
-      tibble::tibble(
-        intercept01 = intercept01,
-        slope01     = slope01
-      )
-    }) %>%
-    dplyr::ungroup()
-
-  # --- join group slopes back and compute exp_y2 ---------------------------
-  df <- df %>%
-    dplyr::left_join(coefs, by = c("baseGroup", "trajGroup")) %>%
-    dplyr::mutate(
-      exp_y2 = .data[[y1_name]] + slope01 * dt12
-    )
+  df <- predictPostResponse(
+    data       = df,
+    y0         = y0_name,
+    y1         = y1_name,
+    y2         = y2_name,
+    base_group = "baseGroup",
+    traj_group = "trajGroup",
+    time01     = dt01,
+    time12     = dt12
+  )
 
   df
 }
