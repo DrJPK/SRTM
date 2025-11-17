@@ -102,6 +102,7 @@ findGroups <- function(data,
                        time_var    = "y1",
                        interactive = TRUE,
                        show_plot   = interactive,
+                       plot_alternatives = FALSE,
                        bw          = "nrd0",
                        adjust      = 1,
                        adjust_grid = c(0.5, 1, 2)) {
@@ -172,6 +173,7 @@ findGroups <- function(data,
   }
 
   # ensure main adjust is included in the grid
+  main_adjust <-adjust
   adjust_grid <- unique(sort(c(adjust, adjust_grid)))
 
   # compute results for all adjust values
@@ -217,7 +219,13 @@ findGroups <- function(data,
         y = dens_main$y[main_res$minima_idx]
       )
 
-      p <- ggplot2::ggplot(dens_all_df, ggplot2::aes(x = x, y = y, colour = adjust)) +
+      if(plot_alternatives){
+        plot_df <- dens_all_df
+      }else{
+        plot_df <- dplyr::filter(dens_all_df, .data$adjust == main_adjust)
+      }
+
+      p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = x, y = y, colour = adjust)) +
         ggplot2::geom_line() +
         # highlight minima for the *main* adjust
         ggplot2::geom_vline(

@@ -1,48 +1,17 @@
-#' Assign group labels based on a group suggestion object
-#'
-#' @description
-#' Assigns group membership to each case in a dataset using the information
-#' stored in an `"srtm_group_suggestion"` object produced by [findGroups()].
-#' The grouping is based on a single numeric time point (e.g. `y1`), with
-#' cut-points derived from the local minima of a kernel density estimate.
-#'
-#' @param data A data frame or tibble containing the time-point variable named
-#'   in `group_params$time_var`.
-#' @param group_params An object of class `"srtm_group_suggestion"`, typically
-#'   returned by [findGroups()]. It must contain at least:
-#'   \itemize{
-#'     \item `time_var` — the name of the variable to use for grouping.
-#'     \item `nGroups` — the final number of groups to form.
-#'     \item `minima_x` — the positions of local minima in the density estimate.
-#'   }
-#'   If `group_params` is `NULL` or not of the correct class and
-#'   `interactive = TRUE`, the function calls [findGroups()] interactively to
-#'   construct a suitable object.
-#' @param interactive Logical. If `TRUE` (default), and `group_params` is not
-#'   supplied or invalid, the user is guided through an interactive process to
-#'   select a time variable and determine the number of groups via [findGroups()].
-#'   If `FALSE`, `group_params` must be a valid `"srtm_group_suggestion"` object.
-#'
-#' @details
-#' The function uses the local minima stored in `group_params$minima_x` as
-#' potential boundaries between groups. If the number of minima exceeds
-#' `nGroups - 1`, a subset of minima is selected to provide approximately
-#' evenly spaced cut-points across the distribution. These cut-points are then
-#' used to partition the chosen time variable into `nGroups` ordered categories,
-#' labelled `"A"`, `"B"`, `"C"`, and so on.
-#'
-#' Cases with missing values on the grouping variable are assigned `NA` for the
-#' returned group label. If there are fewer non-missing observations than
-#' `nGroups`, or there are insufficient minima to support the requested number
-#' of groups, an error is raised.
-#'
-#' @return
-#' A factor vector of length `nrow(data)` containing group labels:
-#' `"A"`, `"B"`, `"C"`, … up to the
-
 assignGroups <- function(data,
                          group_params = NULL,
-                         interactive  = TRUE) {
+                         interactive  = TRUE,
+                         method       = c("density", "kmeans")) {
+
+  # track whether user explicitly supplied `method`
+  method_missing <- missing(method)
+
+  # basic validation / default for method
+  if (!method_missing) {
+    method <- rlang::arg_match(method)
+  } else {
+    method <- "density"
+  }
 
   # --- basic checks --------------------------------------------------------
   if (!is.data.frame(data)) {
@@ -87,9 +56,10 @@ assignGroups <- function(data,
   }
 
   # --- pull settings from group_params -------------------------------------
-  time_name <- group_params$time_var
-  nGroups   <- group_params$nGroups
-  minima_x  <- sort(group_params$minima_x %||% numeric(0))
+  time_name        <- group_params$time_var
+  nGroups          <- group_params$nGroups
+  suggested_nGroups <- group_params$suggested_nGroups %||% NA_integer_
+  minima_x         <- sort(group_params$minima_x %||% numeric(0))
 
   if (!time_name %in% names(data)) {
     rlang::abort(
@@ -107,14 +77,6 @@ assignGroups <- function(data,
     )
   }
 
-  x_valid <- stats::na.omit(x)
-  if (length(x_valid) < nGroups) {
-    rlang::abort(
-      "Not enough non-missing observations to form the requested number of groups.",
-      class = "srtm_assignGroups_too_few"
-    )
-  }
-
   if (!is.numeric(nGroups) || length(nGroups) != 1L || nGroups < 1L) {
     rlang::abort(
       "`group_params$nGroups` must be a single positive integer.",
@@ -123,6 +85,7 @@ assignGroups <- function(data,
   }
 
   nGroups <- as.integer(nGroups)
+
   if (nGroups > length(LETTERS)) {
     rlang::abort(
       glue::glue(
@@ -132,28 +95,89 @@ assignGroups <- function(data,
     )
   }
 
-  n_minima <- length(minima_x)
+  x_valid <- stats::na.omit(x)
+  if (length(x_valid) < nGroups) {
+    rlang::abort(
+      "Not enough non-missing observations to form the requested number of groups.",
+      class = "srtm_assignGroups_too_few"
+    )
+  }
+
+  # --- if user overrode suggested_nGroups, optionally choose method --------
+  if (!is.na(suggested_nGroups) &&
+      suggested_nGroups != nGroups &&
+      interactive &&
+      method_missing) {
+
+    rlang::inform(
+      glue::glue(
+        "You have chosen {nGroups} groups, but the suggested number was {suggested_nGroups}."
+      )
+    )
+    choice <- utils::menu(
+      choices = c("Use density-based minima", "Use k-means clustering"),
+      title   = "How would you like to assign groups?"
+    )
+
+    if (choice == 0) {
+      rlang::abort(
+        "No method selected for assigning groups.",
+        class = "srtm_assignGroups_no_method"
+      )
+    }
+
+    method <- if (choice == 1L) "density" else "kmeans"
+
+    rlang::inform(glue::glue("Using `{method}` method to assign groups."))
+  }
 
   if (nGroups == 1L) {
     groups <- factor(rep("A", length(x)), levels = LETTERS[1])
     return(groups)
   }
 
-  if (n_minima < (nGroups - 1L)) {
-    rlang::abort(
-      glue::glue(
-        "Cannot assign {nGroups} groups: only {n_minima} local minima stored in `group_params` (need at least {nGroups - 1})."
-      ),
-      class = "srtm_assignGroups_not_enough_minima"
-    )
-  }
+  # --- define cutpoints depending on method --------------------------------
+  if (identical(method, "density")) {
+    n_minima <- length(minima_x)
 
-  # if more minima than needed, spread cutpoints across them
-  if (n_minima > (nGroups - 1L)) {
-    idx <- unique(round(seq(1, n_minima, length.out = nGroups - 1L)))
-    cutpoints <- minima_x[idx]
-  } else {
-    cutpoints <- minima_x
+    if (n_minima < (nGroups - 1L)) {
+      rlang::abort(
+        glue::glue(
+          "Cannot assign {nGroups} groups: only {n_minima} local minima stored in `group_params` (need at least {nGroups - 1})."
+        ),
+        class = "srtm_assignGroups_not_enough_minima"
+      )
+    }
+
+    if (n_minima > (nGroups - 1L)) {
+      idx <- unique(round(seq(1, n_minima, length.out = nGroups - 1L)))
+      cutpoints <- minima_x[idx]
+    } else {
+      cutpoints <- minima_x
+    }
+
+  } else { # method == "kmeans"
+    # require at least nGroups distinct values
+    if (length(unique(x_valid)) < nGroups) {
+      rlang::abort(
+        glue::glue(
+          "Cannot assign {nGroups} k-means groups: only {length(unique(x_valid))} distinct values in `{time_name}`."
+        ),
+        class = "srtm_assignGroups_kmeans_not_enough_distinct"
+      )
+    }
+
+    # run k-means with at least 10 random starts to stabilise centres
+    km <- stats::kmeans(
+      x_valid,
+      centers = nGroups,
+      nstart  = max(10L, nGroups)
+    )
+
+    centers <- sort(as.numeric(km$centers))
+
+    # midpoints between adjacent centres become cutpoints
+    cutpoints <- (centers[-1] + centers[-length(centers)]) / 2
   }
 
   breaks <- c(-Inf, cutpoints, Inf)

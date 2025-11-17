@@ -5,6 +5,7 @@ SRTMAnalyse <- function(data,
                         id_col      = "ID",
                         time01      = NULL,
                         time12      = NULL,
+                        group_first = c("slope","baseline"),
                         interactive = TRUE) {
 
   if (!is.data.frame(data)) {
@@ -13,6 +14,8 @@ SRTMAnalyse <- function(data,
       class = "srtm_analyse_bad_data"
     )
   }
+
+  group_first <- rlang::arg_match(group_first)
 
   # turn user-supplied arguments into *column names*
   y0_name <- rlang::as_string(rlang::ensym(y0))
@@ -84,6 +87,7 @@ SRTMAnalyse <- function(data,
     interactive = FALSE
   )
 
+  if(group_first == "baseline"){
   # --- find baseline groups on y1 ------------------------------------------
   base_params <- findGroups(
     data        = df,
@@ -103,6 +107,12 @@ SRTMAnalyse <- function(data,
   df <- df %>%
     dplyr::group_by(baseGroup) %>%
     dplyr::group_modify(function(.x, .g) {
+      # Inform user which baseGroup is being processed
+      rlang::inform(
+        glue::glue("Analysing trajectory groups within baseGroup = '{.g$baseGroup}'"),
+        class = "srtm_analyse_group_message"
+      )
+
       if (sum(!is.na(.x$m01)) < 5L) {
         .x$trajGroup <- factor("A", levels = "A")
         return(.x)
@@ -112,7 +122,7 @@ SRTMAnalyse <- function(data,
         data        = .x,
         time_var    = "m01",
         interactive = interactive,
-        show_plot   = FALSE
+        show_plot   = TRUE
       )
 
       .x$trajGroup <- assignGroups(
@@ -126,6 +136,56 @@ SRTMAnalyse <- function(data,
       .x
     }) %>%
     dplyr::ungroup()
+  }else{
+    # --- find trajectory groups on m01 ------------------------------------------
+    traj_params <- findGroups(
+      data        = df,
+      time_var    = "m01",
+      interactive = interactive,
+      show_plot   = interactive
+    )
+
+    df$trajGroup <- assignGroups(
+      data         = df,
+      group_params = traj_params,
+      interactive  = interactive
+    )
+    df$trajGroup <- as.factor(df$trajGroup)
+
+    # --- within each trajGroup, find baseline groups on y1 ----------------
+    df <- df %>%
+      dplyr::group_by(trajGroup) %>%
+      dplyr::group_modify(function(.x, .g) {
+        # Inform user which baseGroup is being processed
+        rlang::inform(
+          glue::glue("Analysing intercept (baseline) groups within trajectory group = '{.g$trajGroup}'"),
+          class = "srtm_analyse_group_message"
+        )
+
+        if (sum(!is.na(.x$y1)) < 5L) {
+          .x$baseGroup <- factor("A", levels = "A")
+          return(.x)
+        }
+
+        base_params <- findGroups(
+          data        = .x,
+          time_var    = y1_name,
+          interactive = interactive,
+          show_plot   = TRUE
+        )
+
+        .x$baseGroup <- assignGroups(
+          data         = .x,
+          group_params = base_params,
+          interactive  = interactive
+        )
+
+        .x$baseGroup <- factor(as.character(.x$baseGroup))
+
+        .x
+      }) %>%
+      dplyr::ungroup()
+  }
 
   # --- fit group-specific linear models to get y2_exp ----------------------
   df <- predictPostResponse(
@@ -139,5 +199,12 @@ SRTMAnalyse <- function(data,
     time12     = dt12
   )
 
-  df
+  stats <- compareOutcomes(
+    data       = df,
+    obs        = y2_name,
+    exp        = "exp_y2",
+    baseGroups = "baseGroup",
+    trajGroups = "trajGroup")
+
+  list("statistics" = stats, "trajectory counts" = counts, "data" = df)
 }
