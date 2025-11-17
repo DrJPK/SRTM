@@ -41,6 +41,7 @@ predictPostResponse <- function(data,
     )
   }
 
+<<<<<<< HEAD
   # require character column names
   for (nm in c("y0", "y1", "y2", "base_group", "traj_group")) {
     val <- get(nm)
@@ -57,6 +58,22 @@ predictPostResponse <- function(data,
   y2_name        <- y2
   base_group_col <- base_group
   traj_group_col <- traj_group
+=======
+  # resolve column names (support bare names or character)
+  resolve_name <- function(x) {
+    if (is.character(x) && length(x) == 1L) {
+      x
+    } else {
+      rlang::as_string(rlang::ensym(x))
+    }
+  }
+
+  y0_name        <- resolve_name(y0)
+  y1_name        <- resolve_name(y1)
+  y2_name        <- resolve_name(y2)
+  base_group_col <- resolve_name(base_group)
+  traj_group_col <- resolve_name(traj_group)
+>>>>>>> 66759420baad70010bb85d3cf48370baa2d94e8a
 
   required_cols <- c(y0_name, y1_name, y2_name, base_group_col, traj_group_col)
 
@@ -70,7 +87,11 @@ predictPostResponse <- function(data,
     )
   }
 
+<<<<<<< HEAD
   # validate times
+=======
+  # simple numeric checks on times
+>>>>>>> 66759420baad70010bb85d3cf48370baa2d94e8a
   for (nm in c("time01", "time12")) {
     val <- get(nm)
     if (!is.numeric(val) || length(val) != 1L || !is.finite(val) || val <= 0) {
