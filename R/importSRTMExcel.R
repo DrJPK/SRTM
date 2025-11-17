@@ -30,12 +30,22 @@
 #' @param extra_vars Optional character vector or list of additional variable
 #'   names to import. Any that are present in the dataset are included and
 #'   coerced to factors to support downstream grouping or filtering.
+#' @param missing_tokens Optional character vector or list of additional
+#'   codes that should be treated as missing values. These codes are merged
+#'   with a default set of common missing tokens such as `""`, `"NA"`, `"N/A"`,
+#'   `"."`, and `"-"`. When `interactive = TRUE` and `missing_tokens` is `NULL`,
+#'   users can optionally add extra codes via a simple prompt.
 #'
 #' @details
 #' The function wraps [readxl::read_excel()] and provides an interactive column
 #' selection process based on `utils::menu()`. Users can load spreadsheets
 #' exported from school systems or teacher-created Excel files without requiring
 #' exact variable naming.
+#'
+#' Before coercing the outcome columns to numeric, common spreadsheet codes for
+#' missing values (e.g., `"NA"`, `"N/A"`, `"."`, `"-"`, `"Missing"`) and any
+#' user-specified `missing_tokens` are converted to `NA`. Any remaining
+#' non-numeric values that cannot be coerced result in `NA` with a warning.
 #'
 #' The returned dataframe always contains **ID**, **y0**, **y1**, and **y2**
 #' with standard names suitable for downstream SRTM analysis functions.
@@ -53,29 +63,31 @@
 #' @examples
 #' \dontrun{
 #' # Interactive import (user selects file + columns)
-#' df <- import_srtm_excel()
+#' df <- importSRTMExcel()
 #'
 #' # Non-interactive import with explicit column names
-#' df <- import_srtm_excel(
+#' df <- importSRTMExcel(
 #'   path = "teacher_data.xlsx",
 #'   ID   = "StudentID",
 #'   y0   = "Prior_Score",
 #'   y1   = "Baseline",
 #'   y2   = "Post",
-#'   extra_vars = c("Class", "Teacher")
+#'   extra_vars     = c("Class", "Teacher"),
+#'   missing_tokens = c("Not tested", "Absent")
 #' )
 #' }
 #'
 #' @export
 
-import_srtm_excel <- function(path = NULL,
+importSRTMExcel <- function(path = NULL,
                               sheet = NULL,
                               interactive = TRUE,
                               ID = NULL,
                               y0 = NULL,
                               y1 = NULL,
                               y2 = NULL,
-                              extra_vars = NULL) {
+                              extra_vars = NULL,
+                              missing_tokens = NULL) {
 
   # --- basic checks --------------------------------------------------------
   if (!interactive && is.null(path)) {
@@ -185,6 +197,37 @@ import_srtm_excel <- function(path = NULL,
     }
   }
 
+  base_tokens <- c(
+    "", " ", "NA", "N/A", "na", "n/a", "Missing", "missing", ".", "-"
+  )
+
+  if (!is.null(missing_tokens)) {
+    missing_tokens <- unique(as.character(unlist(missing_tokens)))
+  } else if (interactive) {
+    rlang::inform(
+      "If your spreadsheet uses any special codes for missing data (e.g., 'Not tested'), you can add them now."
+    )
+    choice <- utils::menu(c("No, use the defaults", "Yes, I have extra codes"),
+                          title = "Additional missing-value codes?")
+    if (choice == 2L) {
+      extra_input <- readline(
+        "Enter extra codes (cAsE sensitive) separated by commas (e.g. Not tested,Absent): "
+      )
+      if (nzchar(extra_input)) {
+        missing_tokens <- trimws(strsplit(extra_input, ",")[[1]])
+      }
+    }
+  }
+
+  all_missing_tokens <- unique(c(base_tokens, missing_tokens))
+
+  normalise_missing <- function(x) {
+    x_chr  <- as.character(x)
+    x_trim <- trimws(x_chr)
+    x_trim[x_trim %in% all_missing_tokens] <- NA
+    x_trim
+  }
+
   # --- build cleaned dataframe ---------------------------------------------
   df <- raw %>%
     dplyr::select(dplyr::all_of(c(core_cols, extra_vars))) %>%
@@ -193,12 +236,19 @@ import_srtm_excel <- function(path = NULL,
       y0 = !!y0,
       y1 = !!y1,
       y2 = !!y2
-    ) %>%
+    )
+
+  df <- df %>%
     dplyr::mutate(
+      # normalise weird missing codes first
+      y0 = normalise_missing(y0),
+      y1 = normalise_missing(y1),
+      y2 = normalise_missing(y2),
+      # then coerce to the types we expect
       ID = as.factor(ID),
-      y0 = as.numeric(y0),
-      y1 = as.numeric(y1),
-      y2 = as.numeric(y2)
+      y0 = suppressWarnings(as.numeric(y0)),
+      y1 = suppressWarnings(as.numeric(y1)),
+      y2 = suppressWarnings(as.numeric(y2))
     )
 
   # coerce extra vars to factors if they exist
