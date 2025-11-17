@@ -41,8 +41,7 @@ predictPostResponse <- function(data,
     )
   }
 
-<<<<<<< HEAD
-  # require character column names
+# require character column names
   for (nm in c("y0", "y1", "y2", "base_group", "traj_group")) {
     val <- get(nm)
     if (!is.character(val) || length(val) != 1L) {
@@ -59,7 +58,6 @@ predictPostResponse <- function(data,
   base_group_col <- base_group
   traj_group_col <- traj_group
 
-
   required_cols <- c(y0_name, y1_name, y2_name, base_group_col, traj_group_col)
 
   missing_cols <- setdiff(required_cols, names(data))
@@ -73,7 +71,6 @@ predictPostResponse <- function(data,
   }
 
 
-  # validate times
   for (nm in c("time01", "time12")) {
     val <- get(nm)
     if (!is.numeric(val) || length(val) != 1L || !is.finite(val) || val <= 0) {
