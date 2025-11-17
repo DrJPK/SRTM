@@ -2,7 +2,9 @@
 
 S3method(print,srtm_group_suggestion)
 export("%>%")
+export(calculateTrajectories)
 export(findGroups)
 export(generateSynthData)
 export(importSRTMExcel)
+export(predictPostResponse)
 importFrom(magrittr,"%>%")
