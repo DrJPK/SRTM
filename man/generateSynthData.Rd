@@ -49,11 +49,11 @@ normalised to sum to 1 if necessary.}
 missing, a seed is generated and reported via an rlang message.}
 
 \item{return_full_df}{Logical. If \\code{FALSE} (default), returns only
-  \\code{ID}, \\code{y0}, \\code{y1}, and \\code{y2}. If \\code{TRUE},
-  returns additional columns with group membership and trajectory
-  parameters.
+\\code{ID}, \\code{y0}, \\code{y1}, and \\code{y2}. If \\code{TRUE},
+returns additional columns with group membership and trajectory
+parameters.
 
-  @details
+@details
 Baseline scores \\code{y0} are drawn from group-specific normal
 distributions, with group means and standard deviations defined within
 the \\code{[min, max]} scale range. Heteroscedastic noise is used so

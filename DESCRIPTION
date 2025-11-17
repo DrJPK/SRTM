@@ -1,19 +1,45 @@
 Package: SRTM
 Type: Package
-Title: What the Package Does (Title Case)
-Version: 0.1.0
-Authors@R: c(
+Title: Self-Referenced Trajectory Modelling Tools for Educational Data
+Version: 0.0.0.9000
+Authors@R: 
     person(
-      "Jane", "Doe",
-      email = "jane@example.com",
-      role = c("aut", "cre")
+        given = "JohnPaul",
+        family = "Kennedy",
+        role = c("aut", "cre"),
+        email = "john.kennedy01@adelaide.edu.au",
+        comment = c(ORCID = "0000-0002-8126-7086")
     )
-  )
-Description: More about what it does (maybe more than one line).
-    Continuation lines should be indented.
-License: What license is it under?
+Description: 
+    Tools to support Self-Referenced Trajectory Modelling (SRTM) for 
+    educational and behavioural data. The package includes utilities for 
+    generating synthetic longitudinal datasets, modelling individual change 
+    trajectories, and preparing data for downstream analyses. Functions follow 
+    tidyverse conventions and provide reproducible pipelines for simulating 
+    baseline scores, heterogeneous slopes, growth effects, and trajectory 
+    perturbations. Synthetic data generation includes group-based initialisation, 
+    heteroscedastic noise, and flexible intervention effects for method 
+    development, testing, and demonstration.
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
+Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends: 
-    R (>= 3.5)
+    R (>= 4.2)
+Imports:
+    dplyr,
+    tidyr,
+    tibble,
+    rlang,
+    glue,
+    magrittr,
+    stats
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+Config/testthat/edition: 3
+URL: https://github.com/DrJPK/SRTM
+BugReports: https://github.com/DrJPK/SRTM/issues
