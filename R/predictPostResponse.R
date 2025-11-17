@@ -41,6 +41,7 @@ predictPostResponse <- function(data,
     )
   }
 
+<<<<<<< HEAD
   # require character column names
   for (nm in c("y0", "y1", "y2", "base_group", "traj_group")) {
     val <- get(nm)
@@ -58,6 +59,7 @@ predictPostResponse <- function(data,
   base_group_col <- base_group
   traj_group_col <- traj_group
 
+
   required_cols <- c(y0_name, y1_name, y2_name, base_group_col, traj_group_col)
 
   missing_cols <- setdiff(required_cols, names(data))
@@ -69,6 +71,7 @@ predictPostResponse <- function(data,
       class = "srtm_predict_missing_cols"
     )
   }
+
 
   # validate times
   for (nm in c("time01", "time12")) {
