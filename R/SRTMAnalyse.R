@@ -1,3 +1,269 @@
+#' Run a full Self-Referenced Trajectory Modelling (SRMT) analysis
+#'
+#' `SRTMAnalyse()` is the main entry point for the SRTM package. Given repeated
+#' measures for three time points (y0, y1, y2), it:
+#' \itemize{
+#'   \item sets up the time scale between measurements (either via supplied
+#'     durations or interactively via dates or durations),
+#'   \item computes individual slopes between y0 and y1,
+#'   \item forms baseline groups and trajectory groups using
+#'     \code{\link{findGroups}()} and \code{\link{assignGroups}()},
+#'   \item fits group-specific linear models to predict post scores at y2,
+#'   \item compares observed and expected outcomes using
+#'     \code{\link{compareOutcomes}()},
+#'   \item and produces group-level summaries via
+#'     \code{\link{summariseGroupOutcomes}()}.
+#' }
+#'
+#' The result is a structured object of class \code{"srtm_analysis"} that
+#' contains:
+#' \itemize{
+#'   \item the augmented analysis data (with IDs, time variables, slopes,
+#'     groups, expected outcomes, etc.),
+#'   \item group-level comparisons of observed vs expected outcomes,
+#'   \item compact summaries for each baseline × trajectory group, and
+#'   \item settings and grouping parameters used to construct the model.
+#' }
+#'
+#' @param data A data frame or tibble containing at least three numeric
+#'   columns representing repeated measurements at three time points. These
+#'   columns are identified by \code{y0}, \code{y1}, and \code{y2}. The data
+#'   may also contain an ID column used to identify individuals.
+#'
+#' @param y0,y1,y2 Variables representing the three time points used in the
+#'   SRMT workflow. By default these are the character strings \code{"y0"},
+#'   \code{"y1"}, and \code{"y2"}, but they can also be supplied as unquoted
+#'   column names (e.g., \code{y0 = baseline_score}). Internally these
+#'   arguments are converted to column names and used to:
+#'   \itemize{
+#'     \item calculate slopes between \code{y0} and \code{y1},
+#'     \item define baseline groupings on \code{y1},
+#'     \item and fit linear models to predict \code{y2}.
+#'   }
+#'
+#' @param id_col Character string giving the name of the ID column in
+#'   \code{data}. If the specified column exists, it is coerced to a factor
+#'   and used to identify individuals. If it does not exist, synthetic IDs of
+#'   the form \code{"ID000001"}, \code{"ID000002"}, … are generated and added
+#'   to the data, and an informational message is emitted.
+#'
+#' @param time01,time12 Optional numeric values giving the time differences
+#'   between the three measurement occasions:
+#'   \itemize{
+#'     \item \code{time01}: the time interval between \code{y0} and \code{y1},
+#'     \item \code{time12}: the time interval between \code{y1} and \code{y2}.
+#'   }
+#'   If supplied, they must be single positive numeric values and are used
+#'   directly. If either is \code{NULL} and \code{interactive = TRUE}, the
+#'   function delegates to \code{\link{getTimePeriod}()} to obtain the
+#'   required time intervals interactively (either via durations or dates). If
+#'   either is \code{NULL} and \code{interactive = FALSE}, the function aborts
+#'   with an error.
+#'
+#' @param group_first Character string indicating the order in which groups
+#'   should be formed. Must be one of:
+#'   \itemize{
+#'     \item \code{"baseline"}: first form baseline groups on \code{y1} for
+#'       the whole sample, then form trajectory groups on the slope between
+#'       \code{y0} and \code{y1} (\code{m01}) within each baseline group.
+#'     \item \code{"slope"}: first form trajectory groups on \code{m01} for
+#'       the whole sample, then form baseline groups on \code{y1} within each
+#'       trajectory group.
+#'   }
+#'   This allows users to emphasise either initial status (\emph{baseline
+#'   first}) or early change (\emph{slope first}) in the grouping structure.
+#'
+#' @param interactive Logical. If \code{TRUE} (default), the function is
+#'   allowed to use interactive helpers:
+#'   \itemize{
+#'     \item \code{\link{getTimePeriod}()} may prompt for time intervals and
+#'       time-unit labels or dates,
+#'     \item \code{\link{findGroups}()} may display plots and prompt for
+#'       grouping decisions.
+#'   }
+#'   If \code{FALSE}, any required time intervals must be supplied via
+#'   \code{time01} and \code{time12}, and any grouping decisions must be made
+#'   non-interactively (according to the behaviour of \code{findGroups()} and
+#'   \code{assignGroups()} when \code{interactive = FALSE}).
+#'
+#' @return An object of class \code{"srtm_analysis"}, which is a named list
+#'   with the following components:
+#'   \describe{
+#'     \item{Comparisons}{A tibble returned by \code{\link{compareOutcomes}()},
+#'       containing one row per baseline × trajectory group with t-tests of
+#'       observed vs expected outcomes at \code{y2}.}
+#'
+#'     \item{GroupSummary}{A tibble returned by
+#'       \code{\link{summariseGroupOutcomes}()}, providing descriptive
+#'       statistics (e.g., group sizes, means, expected values) for each
+#'       baseline × trajectory group.}
+#'
+#'     \item{data}{The original data augmented with additional columns used in
+#'       the SRMT analysis, including (but not limited to):
+#'       \itemize{
+#'         \item the ID column specified by \code{id_col} (or synthetic IDs),
+#'         \item \code{dt01} and \code{dt12}: time intervals between
+#'           \code{y0}–\code{y1} and \code{y1}–\code{y2},
+#'         \item \code{t0}, \code{t1}, \code{t2}: time positions for each
+#'           occasion (either numeric, with \code{t1 = 0}, or Dates in "dates"
+#'           mode),
+#'         \item \code{m01}: the slope between \code{y0} and \code{y1},
+#'         \item \code{baseGroup}: baseline group membership,
+#'         \item \code{trajGroup}: trajectory group membership,
+#'         \item \code{trajType}: a labelled trajectory type derived from
+#'           \code{m01} and \code{trajGroup},
+#'         \item \code{exp_y2}: the expected post score from group-specific
+#'           linear models.
+#'       }}
+#'
+#'     \item{settings}{A list of analysis settings used to construct the
+#'       model, including:
+#'       \itemize{
+#'         \item \code{y0}, \code{y1}, \code{y2}: the names of the time-point
+#'           columns,
+#'         \item \code{id_col}: the name of the ID column,
+#'         \item \code{time01}, \code{time12}: the numeric time intervals used,
+#'         \item \code{group_first}: the grouping order (\code{"baseline"} or
+#'           \code{"slope"}),
+#'         \item \code{time_mode}: \code{"duration"} or \code{"dates"}
+#'           depending on how timing was specified,
+#'         \item \code{time_unit}: a label for the time units (e.g. "days",
+#'           "weeks", "school terms"),
+#'         \item \code{dates}: in dates mode, a list with \code{t0}, \code{t1},
+#'           \code{t2} storing the original Historical, Pre, and Post dates,
+#'         \item \code{trajThresholds}: optional slope thresholds used to
+#'           label trajectories (if provided by
+#'           \code{\link{srtm_compute_trajType}()}).
+#'       }}
+#'
+#'     \item{group_params}{A list of \code{"srtm_group_suggestion"} objects
+#'       returned by \code{\link{findGroups}()}, used to construct the
+#'       baseline and trajectory groupings. The list typically contains:
+#'       \itemize{
+#'         \item \code{baseline_overall}: grouping of \code{y1} for the whole
+#'           sample (when \code{group_first = "baseline"}),
+#'         \item \code{traj_overall}: grouping of \code{m01} for the whole
+#'           sample (when \code{group_first = "slope"}),
+#'         \item \code{traj_by_base}: grouping objects for \code{m01} within
+#'           each baseline group (when \code{group_first = "baseline"}),
+#'         \item \code{baseline_by_traj}: grouping objects for \code{y1}
+#'           within each trajectory group (when
+#'           \code{group_first = "slope"}).
+#'       }}
+#'   }
+#'
+#'   The object can be inspected directly, or passed to plot/summary methods
+#'   (if provided) to generate visualisations and reports.
+#'
+#' @section Workflow:
+#'
+#' Internally, `SRTMAnalyse()` proceeds through the following stages:
+#' \enumerate{
+#'   \item \strong{Time setup}:
+#'     \itemize{
+#'       \item Resets the internal time state via
+#'         \code{\link{srtm_reset_time_state}()}.
+#'       \item Obtains \code{dt01} and \code{dt12} either from
+#'         \code{time01}/\code{time12} or interactively via
+#'         \code{\link{getTimePeriod}()}.
+#'       \item Constructs \code{t0}, \code{t1}, \code{t2} as either numeric
+#'         times (with \code{t1 = 0}, \code{t0 = -dt01}, \code{t2 = dt12}) or,
+#'         in dates mode, as the original Historical/Pre/Post dates.
+#'     }
+#'
+#'   \item \strong{Slope calculation}:
+#'     \itemize{
+#'       \item Computes \code{m01} (the slope between \code{y0} and
+#'         \code{y1}) using \code{\link{calculateTrajectories}()}.
+#'     }
+#'
+#'   \item \strong{Grouping}:
+#'     \itemize{
+#'       \item If \code{group_first = "baseline"}:
+#'         \enumerate{
+#'           \item Use \code{\link{findGroups}()} on \code{y1} for the whole
+#'             sample to define baseline groups.
+#'           \item Use \code{\link{assignGroups}()} to assign \code{baseGroup}
+#'             to each individual.
+#'           \item Within each \code{baseGroup}, use \code{findGroups} on
+#'             \code{m01} and \code{assignGroups} to create trajectory groups
+#'             (\code{trajGroup}), typically labelled using an arrow-based
+#'             scheme.
+#'         }
+#'       \item If \code{group_first = "slope"}:
+#'         \enumerate{
+#'           \item Use \code{findGroups} on \code{m01} for the whole sample to
+#'             define trajectory groups.
+#'           \item Use \code{assignGroups} to assign \code{trajGroup} to each
+#'             individual.
+#'           \item Within each \code{trajGroup}, use \code{findGroups} on
+#'             \code{y1} and \code{assignGroups} to create baseline groups
+#'             (\code{baseGroup}).
+#'         }
+#'     }
+#'
+#'   \item \strong{Trajectory labelling}:
+#'     \itemize{
+#'       \item Calls \code{\link{srtm_compute_trajType}()} to construct
+#'         \code{trajType}, a human-readable label for trajectory patterns
+#'         based on \code{m01}, \code{trajGroup}, and the time interval
+#'         \code{dt01}.
+#'     }
+#'
+#'   \item \strong{Outcome modelling and comparison}:
+#'     \itemize{
+#'       \item Fits group-specific linear models and computes expected post
+#'         values \code{exp_y2} via \code{\link{predictPostResponse}()}.
+#'       \item Runs \code{\link{compareOutcomes}()} to compare observed
+#'         \code{y2} with \code{exp_y2} within each baseline × trajectory
+#'         group using paired t-tests.
+#'       \item Summarises group outcomes with
+#'         \code{\link{summariseGroupOutcomes}()}.
+#'     }
+#' }
+#'
+#' @seealso
+#'   \code{\link{calculateTrajectories}()},
+#'   \code{\link{findGroups}()},
+#'   \code{\link{assignGroups}()},
+#'   \code{\link{getTimePeriod}()},
+#'   \code{\link{compareOutcomes}()},
+#'   \code{\link{summariseGroupOutcomes}()},
+#'   \code{\link{srtm_compute_trajType}()},
+#'   \code{\link{predictPostResponse}()}.
+#'
+#' @examples
+#' \dontrun{
+#' # Basic usage with a three-time-point dataset
+#' library(dplyr)
+#'
+#' # Assume `SRTM_student_attitude_data` has columns y0, y1, y2 and participantID
+#' data("SRTM_student_attitude_data")
+#'
+#' fit <- SRTMAnalyse(
+#'   data        = SRTM_student_attitude_data,
+#'   y0          = y0,
+#'   y1          = y1,
+#'   y2          = y2,
+#'   id_col      = "participantID",
+#'   group_first = "baseline",
+#'   interactive = TRUE
+#' )
+#'
+#' # Group-level comparisons of observed vs expected post scores
+#' fit$Comparisons
+#'
+#' # Group-level descriptive summaries
+#' fit$GroupSummary
+#'
+#' # Augmented analysis data with groups and expected outcomes
+#' dplyr::glimpse(fit$data)
+#'
+#' # Access analysis settings
+#' fit$settings
+#' }
+#'
+#' @export
 SRTMAnalyse <- function(data,
                         y0          = "y0",
                         y1          = "y1",

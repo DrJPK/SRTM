@@ -6,6 +6,7 @@
 \usage{
 plotCutPoints(
   group_params,
+  title_var = NULL,
   x_label = NULL,
   annotate = TRUE,
   decimals = 2L,

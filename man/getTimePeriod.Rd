@@ -10,19 +10,88 @@ getTimePeriod(
   label = "between two time points"
 )
 }
-\description{
-This helper can work in two modes:
-\itemize{
-\item \emph{Duration} mode: the user enters time differences directly (e.g. "1" week)
-and a time-unit label is stored for later use.
-\item \emph{Dates} mode: the user enters three dates (Historical, Pre, Post) once;
-the differences in days between Historical–Pre (dt01) and Pre–Post (dt12)
-are then reused on subsequent calls.
+\arguments{
+\item{time_period}{Optional numeric scalar giving the time difference
+directly. If supplied, it must be a single positive finite number. In this
+case, \code{getTimePeriod()} simply validates and returns this value without
+modifying internal state.}
+
+\item{interactive}{Logical. If \code{TRUE} (default), the function may
+prompt the user via the console to supply timing information and/or choose
+between duration and dates modes. If \code{FALSE}, and
+\code{time_period} is \code{NULL}, the function aborts with an error
+rather than entering interactive prompts.}
+
+\item{label}{Character description of the interval being requested, used in
+interactive prompts (e.g., \code{"between baseline and follow-up"}). This
+does not affect the returned value but helps make prompts clearer.}
 }
+\value{
+A single positive numeric value representing the time difference:
+\itemize{
+\item If \code{time_period} is supplied: the validated value of
+\code{time_period}.
+\item In duration mode: the numeric value entered by the user, in the
+units implied by the chosen time-unit label.
+\item In dates mode: on the first call, the difference
+\code{dt01 = y1 - y0} in days; on the second call, the difference
+\code{dt12 = y2 - y1} in days; on subsequent calls, \code{dt12} is
+reused unless the state is reset.
+}
+}
+\description{
+\code{getTimePeriod()} obtains a positive time difference to be used in SRMT
+analyses, either directly from a supplied numeric value or interactively
+from the user. It can operate in two conceptual modes:
 }
 \details{
-The chosen unit label and/or dates are stored in an internal environment
-(\code{.srtm_time_state}) so they can be used later (e.g. in plotting and
-in the SRTMAnalyse settings).
+\itemize{
+\item \emph{Duration mode}: the user enters time differences directly
+(e.g., "1" week) and a time-unit label is stored for later use in
+labelling outputs.
+\item \emph{Dates mode}: the user enters three dates once (Historical y0,
+Pre y1, Post y2). The differences in days between Historical–Pre
+(\code{dt01}) and Pre–Post (\code{dt12}) are then reused on subsequent
+calls.
+}
+
+The chosen mode, unit label and/or date-derived differences are cached in an
+internal environment \code{.srtm_time_state} so they can be reused by
+\code{SRTMAnalyse()} and related helpers without repeatedly asking the user
+for the same information.
+
+The function maintains a simple internal state machine via the
+\code{.srtm_time_state} environment:
+
+\itemize{
+\item When no mode has been chosen and \code{time_period} is
+\code{NULL}, the user is asked whether to:
+\enumerate{
+\item enter time periods directly (duration mode), or
+\item enter three dates (dates mode).
+}
+
+\item In \strong{duration mode}, the first call both records the numeric
+value (for the current interval) and prompts for a time-unit label via
+\code{\link{srtm_prompt_time_unit}()}. Subsequent calls (with
+\code{time_period = NULL}) reuse the chosen label in prompts and
+simply ask for another numeric time period in the same units.
+
+\item In \strong{dates mode}, the user is asked once to enter three dates
+in ISO format (YYYY-MM-DD) corresponding to Historical (y0), Pre (y1)
+and Post (y2). These are validated to ensure
+\code{Historical < Pre < Post}, and the differences in days
+(\code{dt01}, \code{dt12}) are stored. The first call returns
+\code{dt01}, the second and subsequent calls return \code{dt12}.
+}
+
+Higher-level SRMT functions use these returned values to construct a
+time-scale with \code{t1 = 0}, \code{t0 = -dt01} and \code{t2 = dt12}. The
+supplementary information in \code{.srtm_time_state} (e.g. unit labels and
+original dates) can also be used for labelling and reporting in plots and
+summaries.
+
+To clear all stored timing information and start afresh (for a new analysis
+or session), call \code{\link{srtm_reset_time_state}()}.
 }
 \keyword{internal}
