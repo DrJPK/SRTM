@@ -13,26 +13,95 @@ plotSRTMPanel(
 )
 }
 \arguments{
-\item{data}{A data frame like the \code{data} element of an \code{srtm_analysis}
-object, containing at least \code{y0}, \code{y1}, \code{y2}, and optionally \code{exp_y2},
-\code{baseGroup}, \code{trajGroup}, and \code{trajType}, plus \code{dt01}, \code{dt12}.}
+\item{data}{A data frame, typically the \code{data} component of an
+\code{\link[=SRTMAnalyse]{SRTMAnalyse()}} result. Must contain at least the columns \code{y0}, \code{y1},
+\code{y2}, and an ID column (see \code{id_col}). If present, \code{exp_y2} is used to
+draw expected post trajectories. Grouping variables \code{baseGroup},
+\code{trajGroup}, and/or \code{trajType} are used for colouring, shaping, and
+faceting. The columns \code{dt01} and \code{dt12} (time between \code{y0}–\code{y1} and
+\code{y1}–\code{y2}) are used when plotting time as a continuous scale.}
 
-\item{id_col}{Name of the ID column. Defaults to \code{"ID"}.}
+\item{id_col}{A string giving the name of the ID column in \code{data}.
+Defaults to \code{"ID"}.}
 
-\item{facet}{Logical. If \code{TRUE} (default), use facets for trajectories
-(trajType if present, otherwise trajGroup).}
+\item{facet}{Logical. If \code{TRUE} (default), the plot is faceted in a grid
+with rows corresponding to baseline groups and columns corresponding to
+trajectory groupings. If \code{FALSE}, all trajectories are drawn in a single
+panel.}
 
-\item{palette}{Character palette name passed to \code{\link[=setPlotPalette]{setPlotPalette()}}.}
+\item{palette}{Character string giving the palette name passed to
+\code{\link[=setPlotPalette]{setPlotPalette()}}. One of \code{"simple"}, \code{"pastel"}, \code{"modern"},
+\code{"colourblind"}, or \code{"greys"}. The palette is combined across baseline
+and trajectory groups using \code{\link[=srtm_setCombinedPalette]{srtm_setCombinedPalette()}} so that
+baseline levels share consistent colours and trajectory directions share
+consistent shapes.}
 
-\item{plot_time_discrete}{Logical. If \code{TRUE}, plot time as a discrete
-factor with levels labelled \code{"Historical"}, \code{"Pre"}, and \code{"Post"}.
-If \code{FALSE} (default), plot time as a continuous numeric scale based on
-the \code{t} variable (time since baseline), with breaks spaced at least 1 unit
-apart.}
+\item{plot_time_discrete}{Logical. If \code{TRUE}, time is plotted as a
+discrete factor with labels \code{"Historical"} (for \code{y0}), \code{"Pre"} (for \code{y1}),
+and \code{"Post"} (for \code{y2}). If \code{FALSE} (default), time is plotted as a
+continuous numeric scale (\code{t}) representing time since baseline, with
+breaks chosen adaptively and the x-axis label taken from the internal
+\code{.srtm_time_state$unit_label} when available (falling back to
+\code{"Time units"}).}
 }
 \value{
-A ggplot object.
+A \link[ggplot2:ggplot]{ggplot2::ggplot} object that can be further modified with additional
+ggplot layers or themes if desired.
 }
 \description{
-Panel plot of SRTM trajectories for a subset of data
+Create a panel plot of individual trajectories and expected post scores
+from an SRTM analysis. The function is designed to work with the \code{data}
+element of an object returned by \code{\link[=SRTMAnalyse]{SRTMAnalyse()}}, and will:
+\itemize{
+\item draw individual observed trajectories from \code{y0}, \code{y1}, and \code{y2};
+\item optionally overlay expected post scores (\code{exp_y2}) as a separate
+"expected" trajectory;
+\item colour and shape trajectories by the interaction of baseline group and
+trajectory grouping (e.g., \code{baseGroup} × \code{trajType});
+\item facet rows by baseline level and columns by trajectory direction
+(if \code{facet = TRUE}).
+}
+
+Time can be displayed either as discrete measurement occasions
+(\code{"Historical"}, \code{"Pre"}, \code{"Post"}) or as a continuous scale representing
+time since baseline (using \code{dt01} and \code{dt12}, and the stored time-unit
+label from \code{.srtm_time_state} when available).
+}
+\details{
+The function first reshapes the data into long format, creating an
+indicator \code{model} to distinguish observed and expected values:
+\itemize{
+\item Observed values: \code{y0}, \code{y1}, \code{y2}, with \code{model = "observed"}.
+\item Expected values: \code{y1} and \code{exp_y2} recoded to \code{time = "y2"},
+with \code{model = "expected"}, so that expected trajectories are aligned
+with the observed post time point.
+}
+
+A combined grouping key \code{group_key = interaction(baseGroup, traj_key)}
+is used to drive both colour and shape aesthetics. Here \code{traj_key} is
+taken from \code{trajType} if present, otherwise from \code{trajGroup}. Baseline
+and trajectory labels are kept in \code{baseGroup_lab} and \code{traj_key_lab} for
+use in facet labels.
+
+When \code{facet = TRUE}, the plot uses \code{\link[ggplot2:facet_grid]{ggplot2::facet_grid()}} with:
+\itemize{
+\item rows = baseline groups (labelled as \code{"Baseline Level\\n<level>"});
+\item columns = trajectory groupings (labelled as \code{"Trajectory Direction\\n<level>"});
+}
+
+and places facet strips on the outside of the plot for clearer panel
+interpretation.
+}
+\examples{
+# Suppose `res` is the result of SRTMAnalyse()
+res <- SRTMAnalyse(SRTM_synth_data, interactive = FALSE, time01 = 1, time12 = 1)
+
+# Basic panel plot with discrete time
+plotSRTMPanel(res$data, plot_time_discrete = TRUE)
+
+# Continuous-time plot using stored time units and faceting
+plotSRTMPanel(res$data, plot_time_discrete = FALSE, palette = "colourblind")
+
+# Single-panel plot (no facets)
+plotSRTMPanel(res$data, facet = FALSE)
 }

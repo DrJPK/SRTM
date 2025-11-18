@@ -11,6 +11,18 @@ getTimePeriod(
 )
 }
 \description{
-Internal helper to obtain a valid time period
+This helper can work in two modes:
+\itemize{
+\item \emph{Duration} mode: the user enters time differences directly (e.g. "1" week)
+and a time-unit label is stored for later use.
+\item \emph{Dates} mode: the user enters three dates (Historical, Pre, Post) once;
+the differences in days between Historical–Pre (dt01) and Pre–Post (dt12)
+are then reused on subsequent calls.
+}
+}
+\details{
+The chosen unit label and/or dates are stored in an internal environment
+(\code{.srtm_time_state}) so they can be used later (e.g. in plotting and
+in the SRTMAnalyse settings).
 }
 \keyword{internal}

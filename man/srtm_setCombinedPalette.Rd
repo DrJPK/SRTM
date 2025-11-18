@@ -11,9 +11,11 @@ srtm_setCombinedPalette(
 )
 }
 \arguments{
-\item{levels_c}{Character vector of baseline levels (e.g. levels of baseGroup).}
+\item{levels_c}{Character or factor vector of baseline levels
+(e.g. levels of baseGroup).}
 
-\item{levels_s}{Character vector of trajectory levels (e.g. levels of trajType).}
+\item{levels_s}{Character or factor vector of trajectory levels
+(e.g. levels of trajType or trajGroup).}
 
 \item{palette}{Character, passed to \code{\link[=setPlotPalette]{setPlotPalette()}}.}
 }

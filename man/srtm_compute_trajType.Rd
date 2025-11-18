@@ -2,7 +2,7 @@
 % Please edit documentation in R/traj_type.R, R/utils-trajType.R
 \name{srtm_compute_trajType}
 \alias{srtm_compute_trajType}
-\title{Compute semantic trajectory types from slope groups}
+\title{Compute semantic trajectory types from slopes and groups}
 \usage{
 srtm_compute_trajType(
   data,
@@ -31,10 +31,85 @@ srtm_compute_trajType(
 \item{label_scheme}{One of "arrows", "signs", or "text".}
 
 \item{dt01}{Numeric > 0. Time between y0 and y1.}
+
+\item{steep_const}{Numeric constant (default \code{0.25}) controlling the
+threshold for defining \emph{steep} vs \emph{shallow} trajectories. The
+threshold in slope units is calculated as
+\code{steep_const * scale_range / dt01}, where \code{scale_range} is the
+approximate range of the outcome scale.}
+
+\item{flat_const}{Numeric constant (default \code{0.05}) controlling the
+threshold for defining \emph{flat} trajectories around zero change. The
+band in slope units is calculated as
+\verb{± flat_const * scale_range / dt01}.}
+}
+\value{
+An ordered factor vector \code{trajType} of length \code{nrow(data)} whose
+levels are semantic trajectory labels determined by \code{label_scheme}
+(plus \code{"Unknown"} when present), with an attribute
+\code{"srtm_slope_thresholds"} describing the thresholds used; or \code{NULL}
+if the inputs are insufficient to compute trajectory types.
 }
 \description{
-Compute semantic trajectory types from slope groups
+Internal helper used by \code{\link[=SRTMAnalyse]{SRTMAnalyse()}} to convert raw trajectory
+slopes (e.g., \code{m01}) and grouping factors (e.g., \code{trajGroup}) into
+semantically meaningful trajectory types such as \emph{steep positive},
+\emph{shallow negative}, or \emph{flat}. The function classifies each
+trajectory group based on its mean slope and returns a factor
+\code{trajType} aligned with the rows of \code{data}.
+}
+\details{
+The function proceeds in several steps:
 
-Compute semantic trajectory types per trajectory group
+\enumerate{
+\item It validates that \code{data[[slope_col]]} is numeric and
+\code{data[[group_col]]} is a factor. If not, \code{NULL} is returned.
+\item The effective time interval \code{dt01} is determined from the
+argument or from \code{data$dt01} (median of finite values), defaulting
+to \code{1} if missing.
+\item The outcome scale range \code{scale_range} is estimated:
+\itemize{
+\item from the combined range of \code{y0}, \code{y1}, and \code{y2} when
+available, or
+\item from the range of \code{slope * dt01} otherwise.
+}
+\item Five ordered thresholds in slope units are constructed:
+\itemize{
+\item \code{+steep_const * scale_range / dt01} (steep positive),
+\item \code{+flat_const  * scale_range / dt01} (shallow positive),
+\item \code{-flat_const  * scale_range / dt01} (flat),
+\item \code{-steep_const * scale_range / dt01} (shallow negative),
+\item \code{-Inf} (steep negative).
+}
+\item For each trajectory group in \code{group_col}, the mean slope is
+computed and classified into one of the five rank levels
+(steep_pos, shallow_pos, flat, shallow_neg, steep_neg) based on
+these thresholds.
+\item Depending on \code{label_scheme}, the rank levels are mapped to
+arrow, sign, or text labels using
+\code{\link[=srtm_trajectory_label_schemes]{srtm_trajectory_label_schemes()}}.
+\item A \code{trajType} factor is created for each row of \code{data} by
+aligning the semantic label of its group. The factor levels are
+ordered according to the semantic trajectory order plus
+\code{"Unknown"} last, and unused levels are dropped.
+}
+
+The function attaches an attribute \code{"srtm_slope_thresholds"} to the
+returned factor, containing:
+\itemize{
+\item \code{slope_col}, \code{group_col}, \code{dt01}, \code{scale_range},
+\item \code{steep_const}, \code{flat_const},
+\item \code{thresholds} — the internal tibble of thresholds and labels used.
+}
+
+This attribute is used by \code{\link[=SRTMAnalyse]{SRTMAnalyse()}} to store slope-threshold
+settings in the \code{settings$trajThresholds} component for later
+inspection or reporting.
+
+If any critical inputs are missing or invalid (e.g., non-positive
+\code{scale_range} or \code{dt01}), the function returns \code{NULL}.
+}
+\seealso{
+\code{\link[=SRTMAnalyse]{SRTMAnalyse()}}, \code{\link[=plotSRTMPanel]{plotSRTMPanel()}}, \code{\link[=srtm_trajectory_label_schemes]{srtm_trajectory_label_schemes()}}
 }
 \keyword{internal}

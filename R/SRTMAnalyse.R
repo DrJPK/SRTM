@@ -8,6 +8,9 @@ SRTMAnalyse <- function(data,
                         group_first = c("slope", "baseline"),
                         interactive = TRUE) {
 
+  # reset time state for this analysis run
+  srtm_reset_time_state()
+
   if (!is.data.frame(data)) {
     rlang::abort(
       "`data` must be a data frame or tibble.",
@@ -64,6 +67,14 @@ SRTMAnalyse <- function(data,
     )
   }
 
+  # store all findGroups() outputs for later plotting
+  group_params_store <- list(
+    baseline_overall = NULL,  # findGroups on y1 for whole sample
+    traj_overall     = NULL,  # findGroups on m01 for whole sample
+    traj_by_base     = list(),# findGroups on m01 within each baseGroup
+    baseline_by_traj = list() # findGroups on y1 within each trajGroup
+  )
+
   # --- obtain time periods -------------------------------------------------
   dt01 <- getTimePeriod(
     time_period = time01,
@@ -79,6 +90,24 @@ SRTMAnalyse <- function(data,
 
   df$dt01 <- dt01
   df$dt12 <- dt12
+
+  # Also create t0, t1, t2 depending on mode -------------------------------
+  if (identical(.srtm_time_state$mode, "dates") &&
+      !is.null(.srtm_time_state$t0) &&
+      !is.null(.srtm_time_state$t1) &&
+      !is.null(.srtm_time_state$t2)) {
+
+    df$t0 <- .srtm_time_state$t0
+    df$t1 <- .srtm_time_state$t1
+    df$t2 <- .srtm_time_state$t2
+
+  } else {
+    # duration mode or user-supplied numeric times:
+    # by convention: y1 at 0, y0 at -dt01, y2 at +dt12
+    df$t0 <- -dt01
+    df$t1 <- 0
+    df$t2 <- dt12
+  }
 
   rlang::inform(
     glue::glue("SRTMAnalyse: using dt01 = {dt01}, dt12 = {dt12}."),
@@ -118,6 +147,8 @@ SRTMAnalyse <- function(data,
       show_plot   = interactive
     )
 
+    group_params_store$baseline_overall <- base_params
+
     rlang::inform(
       glue::glue("SRTMAnalyse: assigning baseGroup using assignGroups() on `{y1_name}`."),
       class = "srtm_analyse_progress"
@@ -134,6 +165,8 @@ SRTMAnalyse <- function(data,
       "SRTMAnalyse: now finding trajectory groups (trajGroup) within each baseGroup using `m01`.",
       class = "srtm_analyse_progress"
     )
+
+    traj_params_by_base <- list()
 
     df <- df %>%
       dplyr::group_by(baseGroup) %>%
@@ -174,6 +207,8 @@ SRTMAnalyse <- function(data,
           show_plot   = interactive
         )
 
+        traj_params_by_base[[current_bg]] <<- traj_params
+
         rlang::inform(
           glue::glue(
             "  Calling assignGroups() for trajGroups in baseGroup '{current_bg}' (label_scheme = 'arrows')."
@@ -188,10 +223,20 @@ SRTMAnalyse <- function(data,
           label_scheme = "arrows"
         )
 
-        .x$trajGroup <- factor(as.character(.x$trajGroup), ordered = TRUE)
+        # return as *character* to avoid incompatible ordered factors
+        .x$trajGroup <- as.character(.x$trajGroup)
         .x
       }) %>%
       dplyr::ungroup()
+
+    # now standardise trajGroup globally as an ordered factor
+    df$trajGroup <- factor(
+      df$trajGroup,
+      levels  = sort(unique(df$trajGroup)),
+      ordered = TRUE
+    )
+
+    group_params_store$traj_by_base <- traj_params_by_base
 
   } else { # group_first == "slope"
     # 1) Trajectory groups on m01
@@ -209,6 +254,8 @@ SRTMAnalyse <- function(data,
       show_plot   = interactive
     )
 
+    group_params_store$traj_overall <- traj_params_all
+
     rlang::inform(
       "SRTMAnalyse: assigning trajGroup using assignGroups() with label_scheme = 'arrows'.",
       class = "srtm_analyse_progress"
@@ -217,8 +264,7 @@ SRTMAnalyse <- function(data,
     df$trajGroup <- assignGroups(
       data         = df,
       group_params = traj_params_all,
-      interactive  = interactive#,
-      #label_scheme = "arrows"
+      interactive  = interactive
     )
     df$trajGroup <- factor(as.character(df$trajGroup), ordered = TRUE)
 
@@ -226,6 +272,8 @@ SRTMAnalyse <- function(data,
       "SRTMAnalyse: now finding baseline groups (baseGroup) within each trajGroup using `y1`.",
       class = "srtm_analyse_progress"
     )
+
+    base_params_by_traj <- list()
 
     df <- df %>%
       dplyr::group_by(trajGroup) %>%
@@ -266,6 +314,8 @@ SRTMAnalyse <- function(data,
           show_plot   = interactive
         )
 
+        base_params_by_traj[[current_tg]] <<- base_params
+
         rlang::inform(
           glue::glue(
             "  Calling assignGroups() for baseGroups in trajGroup '{current_tg}'."
@@ -279,10 +329,18 @@ SRTMAnalyse <- function(data,
           interactive  = interactive
         )
 
-        .x$baseGroup <- factor(as.character(.x$baseGroup), ordered = TRUE)
+        .x$baseGroup <- as.character(.x$baseGroup)
         .x
       }) %>%
       dplyr::ungroup()
+
+    df$baseGroup <- factor(
+      df$baseGroup,
+      levels  = sort(unique(df$baseGroup)),
+      ordered = TRUE
+    )
+
+    group_params_store$baseline_by_traj <- base_params_by_traj
   }
 
   # after trajGroup has been assigned compute labels
@@ -348,8 +406,18 @@ SRTMAnalyse <- function(data,
     id_col      = id_col,
     time01      = dt01,
     time12      = dt12,
-    group_first = group_first
+    group_first = group_first,
+    time_mode   = .srtm_time_state$mode        %||% "duration",
+    time_unit   = .srtm_time_state$unit_label  %||% "Time units"
   )
+
+  if (identical(.srtm_time_state$mode, "dates")) {
+    settings$dates <- list(
+      t0 = .srtm_time_state$t0,
+      t1 = .srtm_time_state$t1,
+      t2 = .srtm_time_state$t2
+    )
+  }
 
   # store thresholds if available
   thr_attr <- attr(df$trajType, "srtm_slope_thresholds", exact = TRUE)
@@ -361,7 +429,8 @@ SRTMAnalyse <- function(data,
     Comparisons  = res,
     GroupSummary = group_summary,
     data         = df,
-    settings     = settings
+    settings     = settings,
+    group_params = group_params_store
   )
 
   class(out) <- c("srtm_analysis", class(out))

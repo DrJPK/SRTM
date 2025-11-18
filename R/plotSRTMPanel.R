@@ -1,21 +1,90 @@
 #' Panel plot of SRTM trajectories for a subset of data
 #'
-#' @param data A data frame like the `data` element of an `srtm_analysis`
-#'   object, containing at least `y0`, `y1`, `y2`, and optionally `exp_y2`,
-#'   `baseGroup`, `trajGroup`, and `trajType`, plus `dt01`, `dt12`.
-#' @param id_col Name of the ID column. Defaults to `"ID"`.
-#' @param facet Logical. If `TRUE` (default), use facets for trajectories
-#'   (trajType if present, otherwise trajGroup).
-#' @param palette Character palette name passed to [setPlotPalette()].
-#' @param plot_time_discrete Logical. If `TRUE`, plot time as a discrete
-#'   factor with levels labelled `"Historical"`, `"Pre"`, and `"Post"`.
-#'   If `FALSE` (default), plot time as a continuous numeric scale based on
-#'   the `t` variable (time since baseline), with breaks spaced at least 1 unit
-#'   apart.
+#' @description
+#' Create a panel plot of individual trajectories and expected post scores
+#' from an SRTM analysis. The function is designed to work with the `data`
+#' element of an object returned by [SRTMAnalyse()], and will:
 #'
-#' @return A ggplot object.
+#' * draw individual observed trajectories from `y0`, `y1`, and `y2`;
+#' * optionally overlay expected post scores (`exp_y2`) as a separate
+#'   "expected" trajectory;
+#' * colour and shape trajectories by the interaction of baseline group and
+#'   trajectory grouping (e.g., `baseGroup` × `trajType`);
+#' * facet rows by baseline level and columns by trajectory direction
+#'   (if `facet = TRUE`).
 #'
-#' @export
+#' Time can be displayed either as discrete measurement occasions
+#' (`"Historical"`, `"Pre"`, `"Post"`) or as a continuous scale representing
+#' time since baseline (using `dt01` and `dt12`, and the stored time-unit
+#' label from `.srtm_time_state` when available).
+#'
+#' @param data A data frame, typically the `data` component of an
+#'   [SRTMAnalyse()] result. Must contain at least the columns `y0`, `y1`,
+#'   `y2`, and an ID column (see `id_col`). If present, `exp_y2` is used to
+#'   draw expected post trajectories. Grouping variables `baseGroup`,
+#'   `trajGroup`, and/or `trajType` are used for colouring, shaping, and
+#'   faceting. The columns `dt01` and `dt12` (time between `y0`–`y1` and
+#'   `y1`–`y2`) are used when plotting time as a continuous scale.
+#' @param id_col A string giving the name of the ID column in `data`.
+#'   Defaults to `"ID"`.
+#' @param facet Logical. If `TRUE` (default), the plot is faceted in a grid
+#'   with rows corresponding to baseline groups and columns corresponding to
+#'   trajectory groupings. If `FALSE`, all trajectories are drawn in a single
+#'   panel.
+#' @param palette Character string giving the palette name passed to
+#'   [setPlotPalette()]. One of `"simple"`, `"pastel"`, `"modern"`,
+#'   `"colourblind"`, or `"greys"`. The palette is combined across baseline
+#'   and trajectory groups using [srtm_setCombinedPalette()] so that
+#'   baseline levels share consistent colours and trajectory directions share
+#'   consistent shapes.
+#' @param plot_time_discrete Logical. If `TRUE`, time is plotted as a
+#'   discrete factor with labels `"Historical"` (for `y0`), `"Pre"` (for `y1`),
+#'   and `"Post"` (for `y2`). If `FALSE` (default), time is plotted as a
+#'   continuous numeric scale (`t`) representing time since baseline, with
+#'   breaks chosen adaptively and the x-axis label taken from the internal
+#'   `.srtm_time_state$unit_label` when available (falling back to
+#'   `"Time units"`).
+#'
+#' @details
+#' The function first reshapes the data into long format, creating an
+#' indicator `model` to distinguish observed and expected values:
+#'
+#' * Observed values: `y0`, `y1`, `y2`, with `model = "observed"`.
+#' * Expected values: `y1` and `exp_y2` recoded to `time = "y2"`,
+#'   with `model = "expected"`, so that expected trajectories are aligned
+#'   with the observed post time point.
+#'
+#' A combined grouping key `group_key = interaction(baseGroup, traj_key)`
+#' is used to drive both colour and shape aesthetics. Here `traj_key` is
+#' taken from `trajType` if present, otherwise from `trajGroup`. Baseline
+#' and trajectory labels are kept in `baseGroup_lab` and `traj_key_lab` for
+#' use in facet labels.
+#'
+#' When `facet = TRUE`, the plot uses [ggplot2::facet_grid()] with:
+#'
+#' * rows = baseline groups (labelled as `"Baseline Level\n<level>"`);
+#' * columns = trajectory groupings (labelled as `"Trajectory Direction\n<level>"`);
+#'
+#' and places facet strips on the outside of the plot for clearer panel
+#' interpretation.
+#'
+#' @return
+#' A [ggplot2::ggplot] object that can be further modified with additional
+#' ggplot layers or themes if desired.
+#'
+#' @examples
+#' # Suppose `res` is the result of SRTMAnalyse()
+#' res <- SRTMAnalyse(SRTM_synth_data, interactive = FALSE, time01 = 1, time12 = 1)
+#'
+#' # Basic panel plot with discrete time
+#' plotSRTMPanel(res$data, plot_time_discrete = TRUE)
+#'
+#' # Continuous-time plot using stored time units and faceting
+#' plotSRTMPanel(res$data, plot_time_discrete = FALSE, palette = "colourblind")
+#'
+#' # Single-panel plot (no facets)
+#' plotSRTMPanel(res$data, facet = FALSE)
+
 plotSRTMPanel <- function(data,
                           id_col            = "ID",
                           facet             = TRUE,
@@ -184,16 +253,16 @@ plotSRTMPanel <- function(data,
       )
     ) +
       ggplot2::geom_line(
-        ggplot2::aes(colour = group_key, linetype = model),
+        ggplot2::aes(colour = group_key),
         alpha     = 0.3,
         linewidth = 0.6
       ) +
       ggplot2::geom_line(
         data = dplyr::filter(df_long, model == "expected"),
-        ggplot2::aes(colour = group_key,
-                     linetype = model),
+        ggplot2::aes(colour = group_key),
         alpha     = 0.3,
-        linewidth = 0.6
+        linewidth = 0.6,
+        linetype  = "dotted"
       ) +
       ggplot2::geom_point(
         ggplot2::aes(
@@ -221,14 +290,26 @@ plotSRTMPanel <- function(data,
 
       p <- p +
         ggplot2::scale_x_continuous(
-          breaks = breaks,
+          breaks       = breaks,
           minor_breaks = NULL
         )
     }
 
+    # pull unit label from internal time state (with a safe fallback)
+    unit_label <- tryCatch(
+      .srtm_time_state$unit_label,
+      error = function(...) NULL
+    )
+    if (is.null(unit_label) || !nzchar(unit_label)) {
+      unit_label <- "Time units"
+    }
+
+    # you can tweak wording here if you prefer "Pre" instead of "baseline"
+    axis_title <- glue::glue("Time since baseline ({unit_label})")
+
     p <- p +
       ggplot2::labs(
-        x = "Time since baseline measurement (same units as dt01/dt12)",
+        x = axis_title,
         y = "Score"
       )
   }
