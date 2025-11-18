@@ -1,18 +1,142 @@
+#' Assign SRMT trajectory groups from a single time-point
+#'
+#' `assignGroups()` takes a numeric time-point variable (e.g., \code{y1}) from a
+#' data frame and assigns each case to an ordered group (A, B, C, …) based on
+#' either density minima or k-means clustering. It is designed to work with
+#' group suggestions produced by \code{\link{findGroups}()} and is used inside
+#' Self-Referenced Trajectory Modelling (SRMT) workflows to create discrete
+#' trajectory groups from continuous scores.
+#'
+#' In typical usage, the user first calls \code{findGroups()} to interactively
+#' explore the distribution of a time-point (e.g., \code{y1}) and to choose an
+#' appropriate number of groups and cutpoints. The resulting
+#' \code{"srtm_group_suggestion"} object is then supplied to
+#' \code{assignGroups()}, which applies these settings to the data and returns
+#' an ordered factor of group labels for each case.
+#'
+#' If \code{group_params} is not supplied (or is not a
+#' \code{"srtm_group_suggestion"}) and \code{interactive = TRUE}, the function
+#' will prompt the user to select a column from \code{data} and will call
+#' \code{findGroups()} interactively to build \code{group_params} on the fly.
+#'
+#' @param data A data frame or tibble containing at least one numeric column
+#'   from which groups are to be derived (e.g., \code{y1}). The column actually
+#'   used is determined by \code{group_params$time_var}, or selected
+#'   interactively if \code{group_params} is not provided and
+#'   \code{interactive = TRUE}.
+#'
+#' @param group_params An object of class \code{"srtm_group_suggestion"}
+#'   typically returned by \code{\link{findGroups}()}. At minimum, this object
+#'   should contain:
+#'   \itemize{
+#'     \item \code{time_var}: the name of the numeric column in \code{data} to
+#'       use for grouping (e.g., \code{"y1"}).
+#'     \item \code{nGroups}: the desired number of groups.
+#'     \item \code{minima_x}: a numeric vector of local minima locations (used
+#'       when \code{method = "density"}).
+#'     \item \code{preferred_method}: optional; a character string
+#'       \code{"density"} or \code{"kmeans"} recommended by
+#'       \code{findGroups()}.
+#'   }
+#'   If \code{group_params} is \code{NULL} or not of the correct class, and
+#'   \code{interactive = FALSE}, the function will abort with an error.
+#'
+#' @param interactive Logical. If \code{TRUE} (the default), the function is
+#'   allowed to fall back to an interactive helper when a valid
+#'   \code{group_params} object is not supplied: the user is presented with a
+#'   menu of column names and \code{findGroups()} is called to construct
+#'   \code{group_params}. If \code{FALSE}, a valid \code{group_params} must be
+#'   supplied and no interactive prompts are shown.
+#'
+#' @param method Character string specifying how to derive cutpoints when
+#'   assigning groups. One of \code{"density"} or \code{"kmeans"}. If
+#'   \code{method} is missing, the function will:
+#'   \itemize{
+#'     \item use \code{group_params$preferred_method}, if present and valid;
+#'     \item otherwise default to \code{"density"}.
+#'   }
+#'   If \code{method} is supplied explicitly, it overrides any preference stored
+#'   in \code{group_params}.
+#'
+#' @param label_scheme Character string specifying the labelling scheme to be
+#'   used for groups. One of \code{"letters"}, \code{"signs"} or
+#'   \code{"arrows"}. Currently, only \code{"letters"} (A, B, C, …) is used
+#'   internally; the argument is included for future extension of labelling
+#'   conventions.
+#'
+#' @return An ordered factor of length \code{nrow(data)} giving the group
+#'   membership for each row. By default, groups are labelled with uppercase
+#'   letters (\code{"A"}, \code{"B"}, \code{"C"}, …). The levels are ordered
+#'   such that:
+#'   \itemize{
+#'     \item \code{"A"} corresponds to the group with the highest mean value on
+#'       the selected time variable;
+#'     \item subsequent letters (\code{"B"}, \code{"C"}, …) correspond to
+#'       progressively lower mean values.
+#'   }
+#'   Observations with \code{NA} in the selected time variable receive
+#'   \code{NA} group assignments.
+#'
+#' @details
+#' When \code{method = "density"}, \code{assignGroups()} uses the local minima
+#' stored in \code{group_params$minima_x} as potential cutpoints. If there are
+#' more minima than required for \code{nGroups - 1} cutpoints, a subset of
+#' minima is selected along the range to approximate evenly spaced valleys.
+#'
+#' When \code{method = "kmeans"}, the function runs a univariate k-means
+#' clustering on the non-missing values of the selected time variable, using
+#' \code{nGroups} centres and at least 10 random starts. The midpoints between
+#' adjacent cluster centres are used as cutpoints.
+#'
+#' In both cases, the numeric variable is first split into intervals using
+#' \code{\link[base]{cut}()}, and the resulting groups are then re-labelled so
+#' that the group with the highest mean score is labelled \code{"A"}, the next
+#' highest \code{"B"}, and so on, ensuring that “higher” groups always
+#' correspond to higher average scores.
+#'
+#' @seealso \code{\link{findGroups}()} for constructing
+#'   \code{"srtm_group_suggestion"} objects interactively, and
+#'   \code{\link{SRTMAnalyse}()} for higher-level SRMT modelling workflows that
+#'   make use of group assignments.
+#'
+#' @examples
+#' \dontrun{
+#' # Simple example using a single time-point column y1
+#' library(dplyr)
+#'
+#' df <- tibble::tibble(
+#'   y1 = rnorm(200, mean = 50, sd = 10)
+#' )
+#'
+#' # Interactively explore and choose groups, then assign them
+#' gp <- findGroups(
+#'   data        = df,
+#'   time_var    = "y1",
+#'   interactive = TRUE,
+#'   show_plot   = TRUE
+#' )
+#'
+#' df$group <- assignGroups(
+#'   data         = df,
+#'   group_params = gp
+#' )
+#'
+#' # Non-interactive usage: require a valid group_params object
+#' df$group_km <- assignGroups(
+#'   data         = df,
+#'   group_params = gp,
+#'   interactive  = FALSE,
+#'   method       = "kmeans"
+#' )
+#' }
+#'
+#' @export
+
 assignGroups <- function(data,
                          group_params = NULL,
                          interactive  = TRUE,
                          method       = c("density", "kmeans"),
                          label_scheme = c("letters", "signs", "arrows")) {
-
-  # track whether user explicitly supplied `method`
-  method_missing <- missing(method)
-
-  # basic validation / defaults
-  if (!method_missing) {
-    method <- rlang::arg_match(method)
-  } else {
-    method <- "density"
-  }
 
   label_scheme <- rlang::arg_match(label_scheme)
 
@@ -106,34 +230,35 @@ assignGroups <- function(data,
     )
   }
 
-  # --- if user overrode suggested_nGroups, optionally choose method --------
-  if (!is.na(suggested_nGroups) &&
-      suggested_nGroups != nGroups &&
-      interactive &&
-      method_missing) {
-
-    rlang::inform(
-      glue::glue(
-        "You have chosen {nGroups} groups, but the suggested number was {suggested_nGroups}."
-      )
-    )
-    choice <- utils::menu(
-      choices = c("Use density-based minima", "Use k-means clustering"),
-      title   = "How would you like to assign groups?"
-    )
-
-    if (choice == 0) {
-      rlang::abort(
-        "No method selected for assigning groups.",
-        class = "srtm_assignGroups_no_method"
-      )
+  # --- decide method: explicit argument > preference from findGroups > default
+  if (missing(method)) {
+    if (!is.null(group_params$preferred_method)) {
+      pm <- group_params$preferred_method
+      if (!is.character(pm) || length(pm) != 1L ||
+          !pm %in% c("density", "kmeans")) {
+        rlang::warn(
+          "Ignoring invalid `preferred_method` in `group_params`; defaulting to 'density'.",
+          class = "srtm_assignGroups_bad_preferred_method"
+        )
+        method <- "density"
+      } else {
+        method <- pm
+        rlang::inform(
+          glue::glue("Using `{method}` method as chosen in findGroups()."),
+          class = "srtm_assignGroups_use_preferred_method"
+        )
+      }
+    } else {
+      method <- "density"
     }
-
-    method <- if (choice == 1L) "density" else "kmeans"
-
-    rlang::inform(glue::glue("Using `{method}` method to assign groups."))
+  } else {
+    method <- rlang::arg_match(method)
   }
 
+  # refresh minima_x (in case group_params was modified upstream)
+  minima_x <- sort(group_params$minima_x %||% numeric(0))
+
+  # --- trivial single-group case ------------------------------------------
   if (nGroups == 1L) {
     groups <- factor(rep("A", length(x)), levels = LETTERS[1], ordered = TRUE)
     return(groups)
@@ -196,14 +321,15 @@ assignGroups <- function(data,
 
   # Make sure group A corresponds to the rightmost group
   group_means <- tapply(x, groups, mean, na.rm = TRUE)
-  ord <- order(group_means, decreasing = TRUE)
-  old_levels <- levels(groups)
-  new_levels <- old_levels[ord]
-  new_labels <- LETTERS[seq_len(length(new_levels))]
+  ord         <- order(group_means, decreasing = TRUE)
+  old_levels  <- levels(groups)
+  new_levels  <- old_levels[ord]
+  new_labels  <- LETTERS[seq_len(length(new_levels))]
+
   groups <- factor(
     groups,
-    levels = new_levels,
-    labels = new_labels,
+    levels  = new_levels,
+    labels  = new_labels,
     ordered = TRUE
   )
 

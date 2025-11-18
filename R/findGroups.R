@@ -300,28 +300,199 @@ findGroups <- function(data,
     )
   }
 
-  # --- interactive override of nGroups -------------------------------------
-  final_n <- suggested_n
+  # --- interactive choice of nGroups and method ---------------------------
+  final_n          <- suggested_n
+  preferred_method <- "density"  # default
 
   if (isTRUE(interactive)) {
-    prompt <- glue::glue(
-      "Suggested number of groups (for adjust = {adjust}) is {suggested_n}. ",
-      "Press Enter to accept or type a different number: "
-    )
-    ans <- readline(prompt)
 
-    if (nzchar(ans)) {
-      n_user <- suppressWarnings(as.integer(ans))
-      if (is.na(n_user) || n_user < 1L) {
-        rlang::warn(
-          "Invalid input; keeping suggested number of groups.",
-          class = "srtm_findGroups_bad_input"
+    repeat {
+      # Main choice: accept or try something else
+      choice_main <- utils::menu(
+        choices = c("Accept this density-based suggestion",
+                    "Try a different grouping strategy"),
+        title   = glue::glue(
+          "Suggested number of groups (for adjust = {adjust}) is {suggested_n}.\n",
+          "Accept this or try something else?"
         )
-      } else {
-        final_n <- n_user
+      )
+
+      if (choice_main == 0L) {
+        rlang::abort(
+          "No choice made for suggested number of groups.",
+          class = "srtm_findGroups_no_n_choice"
+        )
       }
-    }
-  }
+
+      # 1. Accept current suggestion (density-based)
+      if (choice_main == 1L) {
+        final_n          <- suggested_n
+        preferred_method <- "density"
+        break
+      }
+
+      # 2. Try a different strategy
+      method_choice <- utils::menu(
+        choices = c(
+          "Use k-means clustering (set number of groups directly)",
+          "Refine density-based suggestion (try a different `adjust`)"
+        ),
+        title = "Choose how you want to refine the grouping:"
+      )
+
+      if (method_choice == 0L) {
+        rlang::warn(
+          "No method selected; returning to the main choice.",
+          class = "srtm_findGroups_no_method_choice"
+        )
+        next
+      }
+
+      # ---- 2a. K-means: ask for number of groups -------------------------
+      if (method_choice == 1L) {
+        ans <- readline("Enter the desired number of k-means groups (e.g., 2, 3, 4): ")
+        n_user <- suppressWarnings(as.integer(ans))
+
+        if (is.na(n_user) || n_user < 1L) {
+          rlang::warn(
+            "Invalid number of groups; please enter a positive integer.",
+            class = "srtm_findGroups_bad_kmeans_n"
+          )
+          next
+        }
+
+        final_n          <- n_user
+        preferred_method <- "kmeans"
+        break
+      }
+
+      # ---- 2b. Density-refine: loop over adjust values -------------------
+      if (method_choice == 2L) {
+
+        repeat {
+          current_adjust <- adjust
+          rlang::inform(
+            glue::glue(
+              "Current KDE settings for `{time_name}`: bw = {bw}, adjust = {current_adjust}.\n",
+              "Smaller `adjust` reveals more detail (more bumps); larger `adjust` smooths the curve."
+            ),
+            class = "srtm_findGroups_adjust_info"
+          )
+
+          ans_adj <- readline("Enter a new value for `adjust` (e.g., 0.5, 1, 2): ")
+          new_adjust <- suppressWarnings(as.numeric(ans_adj))
+
+          if (is.na(new_adjust) || new_adjust <= 0) {
+            rlang::warn(
+              "Invalid `adjust` value; please enter a positive number.",
+              class = "srtm_findGroups_bad_adjust"
+            )
+            next
+          }
+
+          # recompute density + minima for this new adjust
+          dens_new <- stats::density(x, bw = bw, adjust = new_adjust, na.rm = TRUE)
+          y_new    <- dens_new$y
+
+          dy_new     <- diff(y_new)
+          sign_dy    <- sign(dy_new)
+          sign_dy[sign_dy == 0] <- NA
+
+          minima_idx_new <- which(
+            head(sign_dy, -1) < 0 & tail(sign_dy, -1) > 0
+          ) + 1L
+
+          minima_x_new <- dens_new$x[minima_idx_new]
+          n_minima_new <- length(minima_x_new)
+          suggested_new <- if (n_minima_new == 0L) 1L else n_minima_new + 1L
+
+          # quick plot for this adjust only (if requested and ggplot2 available)
+          if (isTRUE(show_plot) && requireNamespace("ggplot2", quietly = TRUE)) {
+            minima_df_new <- tibble::tibble(
+              x = minima_x_new,
+              y = if (length(minima_idx_new) > 0L) dens_new$y[minima_idx_new] else numeric(0)
+            )
+
+            p_new <- ggplot2::ggplot(
+              tibble::tibble(x = dens_new$x, y = dens_new$y),
+              ggplot2::aes(x = x, y = y)
+            ) +
+              ggplot2::geom_line() +
+              ggplot2::geom_vline(
+                xintercept = minima_x_new,
+                linetype   = "dashed"
+              ) +
+              ggplot2::geom_point(
+                data = minima_df_new,
+                ggplot2::aes(x = x, y = y),
+                inherit.aes = FALSE
+              ) +
+              ggplot2::labs(
+                x = time_name,
+                y = "Density",
+                title = glue::glue(
+                  "Density of {time_name} for adjust = {new_adjust}"
+                ),
+                subtitle = glue::glue(
+                  "Detected {n_minima_new} minima; suggested groups = {suggested_new}"
+                )
+              ) +
+              ggplot2::theme_minimal()
+
+            print(p_new)
+          }
+
+          rlang::inform(
+            glue::glue(
+              "For adjust = {new_adjust}, detected {n_minima_new} local minima; suggested groups = {suggested_new}."
+            ),
+            class = "srtm_findGroups_adjust_summary"
+          )
+
+          choice_adj <- utils::menu(
+            choices = c("Accept this density-based suggestion", "Try another `adjust`"),
+            title   = "Do you want to keep this suggestion?"
+          )
+
+          if (choice_adj == 0L) {
+            rlang::warn(
+              "No choice made; returning to method selection.",
+              class = "srtm_findGroups_no_adjust_choice"
+            )
+            break
+          }
+
+          if (choice_adj == 1L) {
+            # accept this new adjust and its suggestion
+            adjust       <- new_adjust
+            dens_main    <- dens_new
+            minima_x     <- minima_x_new
+            n_minima     <- n_minima_new
+            suggested_n  <- suggested_new
+            final_n      <- suggested_new
+            preferred_method <- "density"
+
+            # simple diagnostic table now just for the chosen adjust
+            bw_diag <- tibble::tibble(
+              adjust      = new_adjust,
+              n_minima    = n_minima_new,
+              suggested_n = suggested_new,
+              minima_list = list(minima_x_new)
+            )
+
+            break  # exit adjust-loop
+          }
+
+          # else: loop and try another adjust
+        }
+
+        # if we have decided, exit outer repeat
+        if (!is.null(preferred_method) && !is.na(final_n)) {
+          break
+        }
+      } # end method_choice == 2L
+    } # end main repeat
+  } # end if interactive
 
   # --- return object -------------------------------------------------------
   res <- list(
@@ -332,7 +503,8 @@ findGroups <- function(data,
     density           = dens_main,
     bw                = bw,
     adjust            = adjust,
-    bw_diagnostic     = bw_diag
+    bw_diagnostic     = bw_diag,
+    preferred_method  = preferred_method
   )
 
   class(res) <- c("srtm_group_suggestion", class(res))
