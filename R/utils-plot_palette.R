@@ -94,28 +94,58 @@ setPlotPalette <- function(palette = c("simple", "pastel", "modern", "colourblin
   res
 }
 
-#' Build combined colour/shape palettes for interaction-based legends
+#' Build combined colour/shape palettes for Baseline × Trajectory legends
 #'
-#' @param levels Character vector of levels (e.g. levels of interaction(baseGroup, trajType)).
+#' @param levels_c Character or factor vector of baseline levels
+#'   (e.g. levels of baseGroup).
+#' @param levels_s Character or factor vector of trajectory levels
+#'   (e.g. levels of trajType or trajGroup).
 #' @param palette Character, passed to [setPlotPalette()].
 #'
 #' @keywords internal
-srtm_setCombinedPalette <- function(levels,
+srtm_setCombinedPalette <- function(levels_c,
+                                    levels_s,
                                     palette = c("simple", "pastel", "modern", "colourblind", "greys")) {
+
   palette <- rlang::arg_match(palette)
-  pal     <- setPlotPalette(palette)
 
-  n <- length(levels)
+  # Coerce to character (works for factors or characters)
+  lev_c <- as.character(levels_c)
+  lev_s <- as.character(levels_s)
 
-  cols <- rep(pal$colours, length.out = n)
-  shp  <- rep(pal$shapes,  length.out = n)
+  n_c <- length(lev_c)
+  n_s <- length(lev_s)
 
-  names(cols) <- levels
-  names(shp)  <- levels
+  pal <- setPlotPalette(palette)
+
+  # One colour per baseline level, recycled if needed
+  col_base <- rep(pal$colours, length.out = n_c)
+  # One shape per trajectory level, recycled if needed
+  shp_base <- rep(pal$shapes,  length.out = n_s)
+
+  # All combinations, with baseline varying slow and trajectory varying fast:
+  # A↑, A↓, B↑, B↓, C↑, C↓, ...
+  comb_grid <- expand.grid(
+    c = seq_len(n_c),
+    s = seq_len(n_s)
+  )
+
+  comb_names <- paste0(
+    lev_c[comb_grid$c],
+    lev_s[comb_grid$s]
+  )
+
+  # Colours: depend only on baseline -> repeat each baseline colour for all traj levels
+  cols <- col_base[comb_grid$c]
+
+  # Shapes: depend only on trajectory -> repeat each traj shape across baselines
+  shapes <- shp_base[comb_grid$s]
+
+  names(cols)   <- comb_names
+  names(shapes) <- comb_names
 
   list(
     colours = cols,
-    shapes  = shp
+    shapes  = shapes
   )
 }
-

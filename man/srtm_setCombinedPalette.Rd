@@ -2,19 +2,22 @@
 % Please edit documentation in R/utils-plot_palette.R
 \name{srtm_setCombinedPalette}
 \alias{srtm_setCombinedPalette}
-\title{Build combined colour/shape palettes for interaction-based legends}
+\title{Build combined colour/shape palettes for Baseline × Trajectory legends}
 \usage{
 srtm_setCombinedPalette(
-  levels,
+  levels_c,
+  levels_s,
   palette = c("simple", "pastel", "modern", "colourblind", "greys")
 )
 }
 \arguments{
-\item{levels}{Character vector of levels (e.g. levels of interaction(baseGroup, trajType)).}
+\item{levels_c}{Character vector of baseline levels (e.g. levels of baseGroup).}
+
+\item{levels_s}{Character vector of trajectory levels (e.g. levels of trajType).}
 
 \item{palette}{Character, passed to \code{\link[=setPlotPalette]{setPlotPalette()}}.}
 }
 \description{
-Build combined colour/shape palettes for interaction-based legends
+Build combined colour/shape palettes for Baseline × Trajectory legends
 }
 \keyword{internal}

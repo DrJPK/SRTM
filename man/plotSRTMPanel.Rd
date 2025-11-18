@@ -8,13 +8,14 @@ plotSRTMPanel(
   data,
   id_col = "ID",
   facet = TRUE,
-  palette = c("simple", "pastel", "modern", "colourblind", "greys")
+  palette = c("simple", "pastel", "modern", "colourblind", "greys"),
+  plot_time_discrete = FALSE
 )
 }
 \arguments{
 \item{data}{A data frame like the \code{data} element of an \code{srtm_analysis}
 object, containing at least \code{y0}, \code{y1}, \code{y2}, and optionally \code{exp_y2},
-\code{baseGroup}, \code{trajGroup}, and \code{trajType}.}
+\code{baseGroup}, \code{trajGroup}, and \code{trajType}, plus \code{dt01}, \code{dt12}.}
 
 \item{id_col}{Name of the ID column. Defaults to \code{"ID"}.}
 
@@ -22,6 +23,12 @@ object, containing at least \code{y0}, \code{y1}, \code{y2}, and optionally \cod
 (trajType if present, otherwise trajGroup).}
 
 \item{palette}{Character palette name passed to \code{\link[=setPlotPalette]{setPlotPalette()}}.}
+
+\item{plot_time_discrete}{Logical. If \code{TRUE}, plot time as a discrete
+factor with levels labelled \code{"Historical"}, \code{"Pre"}, and \code{"Post"}.
+If \code{FALSE} (default), plot time as a continuous numeric scale based on
+the \code{t} variable (time since baseline), with breaks spaced at least 1 unit
+apart.}
 }
 \value{
 A ggplot object.
