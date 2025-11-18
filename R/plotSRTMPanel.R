@@ -1,156 +1,163 @@
+#' Panel plot of SRTM trajectories for a subset of data
+#'
+#' @param data A data frame like the `data` element of an `srtm_analysis`
+#'   object, containing at least `y0`, `y1`, `y2`, and optionally `exp_y2`,
+#'   `baseGroup`, `trajGroup`, and `trajType`.
+#' @param id_col Name of the ID column. Defaults to `"ID"`.
+#' @param facet Logical. If `TRUE` (default), use facets for trajectories
+#'   (trajType if present, otherwise trajGroup).
+#' @param palette Character palette name passed to [setPlotPalette()].
+#'
+#' @return A ggplot object.
+#'
+#' @export
 plotSRTMPanel <- function(data,
-                          facet      = FALSE,
-                          show_means = TRUE,
-                          show_ci    = FALSE,
-                          ci_level   = 0.95,
-                          palette    = "simple") {
-  # basic checks
-  required_cols <- c("ID", "y0", "y1", "y2", "exp_y2",
-                     "baseGroup", "trajGroup")
-  missing_cols  <- setdiff(required_cols, names(data))
-  if (length(missing_cols) > 0L) {
+                          id_col  = "ID",
+                          facet   = TRUE,
+                          palette = c("simple", "pastel", "modern", "colourblind", "greys")) {
+
+  palette <- rlang::arg_match(palette)
+  df      <- tibble::as_tibble(data)
+
+  if (!id_col %in% names(df)) {
     rlang::abort(
-      glue::glue("Missing required columns in `data`: {paste(missing_cols, collapse = ', ')}."),
-      class = "srtm_plot_missing_cols"
+      glue::glue("Column `{id_col}` not found in `data`."),
+      class = "srtm_plot_bad_id_col"
     )
   }
 
-  pal <- setPlotPalette(palette)
+  # choose trajectory facet/group variable
+  traj_facet <- dplyr::case_when(
+    "trajType"  %in% names(df) ~ "trajType",
+    "trajGroup" %in% names(df) ~ "trajGroup",
+    TRUE                       ~ NA_character_
+  )
 
-  # --- observed trajectories ---
-  df_obs <- data %>%
+  if (is.na(traj_facet)) {
+    rlang::abort(
+      "Neither `trajType` nor `trajGroup` found in `data`.",
+      class = "srtm_plot_no_traj"
+    )
+  }
+
+  # ensure baseGroup exists (or create a dummy one)
+  if (!"baseGroup" %in% names(df)) {
+    df$baseGroup <- factor("All", levels = "All")
+  }
+
+  # -------------------------------------------------------------------------
+  # Build long data: observed and expected
+  # -------------------------------------------------------------------------
+  has_exp <- "exp_y2" %in% names(df)
+
+  # observed: y0, y1, y2
+  obs_long <- df %>%
     tidyr::pivot_longer(
-      cols      = c("y0", "y1", "y2"),
+      cols      = tidyselect::all_of(c("y0", "y1", "y2")),
       names_to  = "time",
       values_to = "value"
     ) %>%
     dplyr::mutate(model = "observed")
 
-  # --- expected trajectories: anchor at y1, end at exp_y2 ---
-  df_exp <- data %>%
-    dplyr::select(ID, y1, exp_y2, baseGroup, trajGroup) %>%
-    tidyr::pivot_longer(
-      cols      = c("y1", "exp_y2"),
-      names_to  = "time_raw",
-      values_to = "value"
-    ) %>%
-    dplyr::mutate(
-      model = "expected",
-      time  = dplyr::case_when(
-        time_raw == "y1"     ~ "y1",
-        time_raw == "exp_y2" ~ "y2"
+  if (has_exp) {
+    exp_long <- df %>%
+      dplyr::select(dplyr::all_of(c(id_col, "baseGroup", traj_facet, "exp_y2"))) %>%
+      dplyr::rename(value = "exp_y2") %>%
+      dplyr::mutate(
+        time  = "y2",
+        model = "expected"
       )
-    ) %>%
-    dplyr::select(-time_raw)
 
-  # --- combine & factorise ---
-  df <- dplyr::bind_rows(df_obs, df_exp) %>%
-    dplyr::mutate(
-      time  = factor(time, levels = c("y0", "y1", "y2")),
-      model = factor(model, levels = c("observed", "expected"))
-    )
-
-  # --- compute group summaries (means & CIs) -------------------------------
-  if (show_means || show_ci) {
-    summary_df <- df %>%
-      dplyr::group_by(baseGroup, trajGroup, model, time) %>%
-      dplyr::summarise(
-        n    = sum(!is.na(value)),
-        mean = mean(value, na.rm = TRUE),
-        sd   = stats::sd(value, na.rm = TRUE),
-        se   = sd / sqrt(n),
-        ci   = se * stats::qt(1 - (1 - ci_level) / 2, df = pmax(n - 1, 1)),
-        lower = mean - ci,
-        upper = mean + ci,
-        .groups = "drop"
-      )
+    df_long <- dplyr::bind_rows(obs_long, exp_long)
+  } else {
+    df_long <- obs_long
   }
 
-  # --- base plot: individual trajectories (more see-through) ---------------
-  plt <- df %>%
-    ggplot2::ggplot(
-      ggplot2::aes(
-        x       = time,
-        y       = value,
-        group   = interaction(.data$ID, model),
-        colour  = .data$baseGroup,
-        linetype = model
+  df_long <- df_long %>%
+    dplyr::mutate(
+      time  = factor(time, levels = c("y0", "y1", "y2")),
+      model = factor(model, levels = unique(model))
+    )%>%
+    dplyr::mutate(
+      t = dplyr::case_when(
+        time == "y0" ~ -dt01,
+        time == "y1" ~ 0,
+        time == "y2" ~ dt12,
+        TRUE         ~ NA
       )
+    )
+
+  # -------------------------------------------------------------------------
+  # Combined legend key: interaction(baseGroup, trajType/trajGroup)
+  # -------------------------------------------------------------------------
+  df_long <- df_long %>%
+    dplyr::mutate(
+      baseGroup = as.factor(.data$baseGroup),
+      traj_key  = .data[[traj_facet]],
+      traj_key  = as.factor(traj_key),
+      group_key = interaction(
+        baseGroup,
+        traj_key,
+        drop = TRUE,
+        sep  = ""
+      )
+    )
+
+  # Build combined palette for group_key
+  comb_levels <- levels(df_long$group_key)
+  comb_pal    <- srtm_setCombinedPalette(comb_levels, palette = palette)
+
+  # -------------------------------------------------------------------------
+  # Plot
+  # -------------------------------------------------------------------------
+  id_sym <- rlang::sym(id_col)
+
+  p <- ggplot2::ggplot(
+    df_long,
+    ggplot2::aes(
+      x     = time,
+      y     = value,
+      group = !!id_sym
+    )
+  ) +
+    # neutral per-ID trajectories
+    ggplot2::geom_line(
+      colour   = "grey70",
+      alpha    = 0.3,
+      linewidth = 0.4
     ) +
-    ggplot2::geom_line(alpha = 0.20) +  # faint individual lines
+    # points coloured and shaped by combined group
     ggplot2::geom_point(
-      ggplot2::aes(shape = .data$trajGroup),
-      alpha = 0.35
+      ggplot2::aes(
+        colour = group_key,
+        shape  = group_key
+      ),
+      alpha = 0.7,
+      size  = 2
     ) +
-    ggplot2::scale_linetype_manual(
-      values = c(observed = "solid", expected = "dotted")
+    ggplot2::scale_colour_manual(
+      values = comb_pal$colours,
+      name   = "Baseline × Trajectory"
+    ) +
+    ggplot2::scale_shape_manual(
+      values = comb_pal$shapes,
+      name   = "Baseline × Trajectory"
     ) +
     ggplot2::labs(
-      x = "Time",
-      y = "Score",
-      colour   = "Base group",
-      shape    = "Trajectory group",
-      linetype = "Model"
+      x = "Time point",
+      y = "Score"
     ) +
     ggplot2::theme_minimal()
 
-  # --- add group means -----------------------------------------------------
-  if (show_means) {
-    plt <- plt +
-      ggplot2::geom_line(
-        data = summary_df,
-        inherit.aes = FALSE,
-        ggplot2::aes(
-          x      = time,
-          y      = mean,
-          group  = interaction(baseGroup, trajGroup, model),
-          colour = baseGroup,
-          linetype = model
-        ),
-        size  = 1.1,
-        alpha = 0.9
-      ) +
-      ggplot2::geom_point(
-        data = summary_df,
-        inherit.aes = FALSE,
-        ggplot2::aes(
-          x      = time,
-          y      = mean,
-          colour = baseGroup,
-          shape  = trajGroup
-        ),
-        size  = 2.5,
-        alpha = 0.95
+  if (facet) {
+    # facet rows by baseGroup, cols by traj facet (trajType or trajGroup)
+    p <- p +
+      ggplot2::facet_grid(
+        rows = ggplot2::vars(baseGroup),
+        cols = ggplot2::vars(traj_key),
+        scales = "free_y"
       )
   }
 
-  # --- add confidence bands around means ----------------------------------
-  if (show_ci) {
-    plt <- plt +
-      ggplot2::geom_errorbar(
-        data = summary_df,
-        inherit.aes = FALSE,
-        ggplot2::aes(
-          x      = time,
-          ymin   = lower,
-          ymax   = upper,
-          group  = interaction(baseGroup, trajGroup, model),
-          colour = baseGroup
-        ),
-        width = 0.1,
-        alpha = 0.8
-      )
-  }
-
-  plt <- plt +
-    ggplot2::scale_colour_manual(values = pal$colours) +
-    ggplot2::scale_shape_manual(values = pal$shapes[seq_len(nlevels(df$trajGroup))]) +
-    ggplot2::scale_linetype_manual(values = pal$linetypes)
-
-  # --- optional faceting ---------------------------------------------------
-  if (isTRUE(facet)) {
-    plt <- plt + ggplot2::facet_grid(baseGroup ~ trajGroup)
-  }
-
-  plt
+  p
 }

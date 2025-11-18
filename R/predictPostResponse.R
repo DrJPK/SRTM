@@ -145,5 +145,9 @@ predictPostResponse <- function(data,
     ) %>%
     dplyr::mutate(
       exp_y2 = .data[[y1_name]] + slope01 * time12
-    )
+    )%>%
+    dplyr::relocate(exp_y2, .after = y2)%>%
+    dplyr::relocate(baseGroup, .after = ID)%>%
+    dplyr::relocate(trajGroup, .after = baseGroup)
+
 }

@@ -9,6 +9,7 @@ findGroups(
   time_var = "y1",
   interactive = TRUE,
   show_plot = interactive,
+  plot_alternatives = FALSE,
   bw = "nrd0",
   adjust = 1,
   adjust_grid = c(0.5, 1, 2)

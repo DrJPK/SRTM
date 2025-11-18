@@ -93,3 +93,29 @@ setPlotPalette <- function(palette = c("simple", "pastel", "modern", "colourblin
   class(res) <- c("srtm_palette", class(res))
   res
 }
+
+#' Build combined colour/shape palettes for interaction-based legends
+#'
+#' @param levels Character vector of levels (e.g. levels of interaction(baseGroup, trajType)).
+#' @param palette Character, passed to [setPlotPalette()].
+#'
+#' @keywords internal
+srtm_setCombinedPalette <- function(levels,
+                                    palette = c("simple", "pastel", "modern", "colourblind", "greys")) {
+  palette <- rlang::arg_match(palette)
+  pal     <- setPlotPalette(palette)
+
+  n <- length(levels)
+
+  cols <- rep(pal$colours, length.out = n)
+  shp  <- rep(pal$shapes,  length.out = n)
+
+  names(cols) <- levels
+  names(shp)  <- levels
+
+  list(
+    colours = cols,
+    shapes  = shp
+  )
+}
+

@@ -1,17 +1,20 @@
 assignGroups <- function(data,
                          group_params = NULL,
                          interactive  = TRUE,
-                         method       = c("density", "kmeans")) {
+                         method       = c("density", "kmeans"),
+                         label_scheme = c("letters", "signs", "arrows")) {
 
   # track whether user explicitly supplied `method`
   method_missing <- missing(method)
 
-  # basic validation / default for method
+  # basic validation / defaults
   if (!method_missing) {
     method <- rlang::arg_match(method)
   } else {
     method <- "density"
   }
+
+  label_scheme <- rlang::arg_match(label_scheme)
 
   # --- basic checks --------------------------------------------------------
   if (!is.data.frame(data)) {
@@ -56,10 +59,10 @@ assignGroups <- function(data,
   }
 
   # --- pull settings from group_params -------------------------------------
-  time_name        <- group_params$time_var
-  nGroups          <- group_params$nGroups
+  time_name         <- group_params$time_var
+  nGroups           <- group_params$nGroups
   suggested_nGroups <- group_params$suggested_nGroups %||% NA_integer_
-  minima_x         <- sort(group_params$minima_x %||% numeric(0))
+  minima_x          <- sort(group_params$minima_x %||% numeric(0))
 
   if (!time_name %in% names(data)) {
     rlang::abort(
@@ -132,7 +135,7 @@ assignGroups <- function(data,
   }
 
   if (nGroups == 1L) {
-    groups <- factor(rep("A", length(x)), levels = LETTERS[1])
+    groups <- factor(rep("A", length(x)), levels = LETTERS[1], ordered = TRUE)
     return(groups)
   }
 
@@ -189,6 +192,19 @@ assignGroups <- function(data,
     include.lowest  = TRUE,
     right           = TRUE,
     ordered_result  = TRUE
+  )
+
+  # Make sure group A corresponds to the rightmost group
+  group_means <- tapply(x, groups, mean, na.rm = TRUE)
+  ord <- order(group_means, decreasing = TRUE)
+  old_levels <- levels(groups)
+  new_levels <- old_levels[ord]
+  new_labels <- LETTERS[seq_len(length(new_levels))]
+  groups <- factor(
+    groups,
+    levels = new_levels,
+    labels = new_labels,
+    ordered = TRUE
   )
 
   groups
