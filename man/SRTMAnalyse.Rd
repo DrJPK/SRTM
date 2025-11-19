@@ -2,7 +2,7 @@
 % Please edit documentation in R/SRTMAnalyse.R
 \name{SRTMAnalyse}
 \alias{SRTMAnalyse}
-\title{Run a full Self-Referenced Trajectory Modelling (SRMT) analysis}
+\title{Run a full Self-Referenced Trajectory Modelling (SRTM) analysis}
 \usage{
 SRTMAnalyse(
   data,
@@ -10,6 +10,9 @@ SRTMAnalyse(
   y1 = "y1",
   y2 = "y2",
   id_col = "ID",
+  t0 = NULL,
+  t1 = NULL,
+  t2 = NULL,
   time01 = NULL,
   time12 = NULL,
   group_first = c("slope", "baseline"),
@@ -18,181 +21,167 @@ SRTMAnalyse(
 )
 }
 \arguments{
-\item{data}{A data frame or tibble containing at least three numeric
-columns representing repeated measurements at three time points. These
-columns are identified by \code{y0}, \code{y1}, and \code{y2}. The data
-may also contain an ID column used to identify individuals.}
+\item{data}{A data frame or tibble containing at least three numeric columns
+representing repeated measurements at three time points. These columns are
+identified by \code{y0}, \code{y1}, and \code{y2}. The data may also
+contain ID and time-related columns.}
 
-\item{y0, y1, y2}{Variables representing the three time points used in the
-SRMT workflow. By default these are the character strings \code{"y0"},
-\code{"y1"}, and \code{"y2"}, but they can also be supplied as unquoted
-column names (e.g., \code{y0 = baseline_score}). Internally these
-arguments are converted to column names and used to:
-\itemize{
-\item calculate slopes between \code{y0} and \code{y1},
-\item define baseline groupings on \code{y1},
-\item and fit linear models to predict \code{y2}.
-}}
+\item{y0, y1, y2}{Variables representing the outcome at the three measurement
+occasions used in the SRTM workflow. By default these are the character
+strings \code{"y0"}, \code{"y1"}, and \code{"y2"}, but they can also be
+supplied as unquoted column names (e.g., \code{y0 = baseline_score}).}
 
 \item{id_col}{Character string giving the name of the ID column in
-\code{data}. If the specified column exists, it is coerced to a factor
-and used to identify individuals. If it does not exist, synthetic IDs of
-the form \code{"ID000001"}, \code{"ID000002"}, … are generated and added
-to the data, and an informational message is emitted.}
+\code{data}. If present, it is coerced to a factor. If absent, synthetic
+IDs of the form \code{"ID000001"}, \code{"ID000002"}, … are generated and
+an informational message is emitted.}
 
-\item{time01, time12}{Optional numeric values giving the time differences
-between the three measurement occasions:
+\item{t0, t1, t2}{Optional variables naming columns in \code{data} that store
+the absolute times of the three occasions. These can be unquoted column
+names or character strings. If \code{NULL}, the function looks for columns
+literally named \code{"t0"}, \code{"t1"}, and \code{"t2"}. When available,
+they are used to infer dt01 and dt12 as described in the Time handling
+section.}
+
+\item{time01, time12}{Optional numeric time intervals between the three
+occasions:
 \itemize{
-\item \code{time01}: the time interval between \code{y0} and \code{y1},
-\item \code{time12}: the time interval between \code{y1} and \code{y2}.
+\item \code{time01}: time difference between \code{y0} and \code{y1},
+\item \code{time12}: time difference between \code{y1} and \code{y2}.
 }
-If supplied, they must be single positive numeric values and are used
-directly. If either is \code{NULL} and \code{interactive = TRUE}, the
-function delegates to \code{\link{getTimePeriod}()} to obtain the
-required time intervals interactively (either via durations or dates). If
-either is \code{NULL} and \code{interactive = FALSE}, the function aborts
-with an error.}
+When supplied, these override any intervals inferred from columns in
+\code{data}. When \code{NULL}, the function attempts to infer intervals
+from \code{time01}/\code{time12} columns or \code{t0}/\code{t1}/\code{t2},
+and finally, if \code{interactive = TRUE}, via
+\code{\link{getTimePeriod}()}.}
 
 \item{group_first}{Character string indicating the order in which groups
 should be formed. Must be one of:
 \itemize{
-\item \code{"baseline"}: first form baseline groups on \code{y1} for
-the whole sample, then form trajectory groups on the slope between
-\code{y0} and \code{y1} (\code{m01}) within each baseline group.
-\item \code{"slope"}: first form trajectory groups on \code{m01} for
-the whole sample, then form baseline groups on \code{y1} within each
-trajectory group.
-}
-This allows users to emphasise either initial status (\emph{baseline
-first}) or early change (\emph{slope first}) in the grouping structure.}
+\item \code{"baseline"}: form baseline groups on \code{y1} first, then
+trajectory groups on the slope \code{m01} within each baseline group;
+\item \code{"slope"}: form trajectory groups on \code{m01} first, then
+baseline groups on \code{y1} within each trajectory group.
+}}
 
 \item{traj_label_scheme}{Character string specifying the labelling scheme
-to use for \emph{trajectory} groups and for \code{trajType}. Must be one
-of \code{"arrows"}, \code{"signs"}, or \code{"text"}:
+for trajectory groups and \code{trajType}. One of:
 \itemize{
-\item \code{"arrows"}: uses arrow glyphs such as \code{"↟"}, \code{"↑"},
-      \code{"→"}, \code{"↓"}, \code{"↡"} (with suffixes like \code{"_a"}
-when multiple distinct groups share the same conceptual rank).
-\item \code{"signs"}: uses sign labels such as \code{"++"}, \code{"+"},
-\code{"—"}, \code{"-"}, \code{"--"} (again with suffixes where
-needed).
-\item \code{"text"}: uses textual labels corresponding to the internal
-trajectory ranks: \code{"steep_pos"}, \code{"shallow_pos"},
-\code{"flat"}, \code{"shallow_neg"}, \code{"steep_neg"} (with
-suffixes).
+\item \code{"arrows"}: arrow glyphs (e.g., \code{"↟"}, \code{"↑"},
+      \code{"→"}, \code{"↓"}, \code{"↡"}),
+\item \code{"signs"}: sign-like labels (e.g., \code{"++"}, \code{"+"},
+\code{"—"}, \code{"-"}, \code{"--"}),
+\item \code{"text"}: textual labels corresponding to internal rank
+levels (e.g., \code{"steep_pos"}, \code{"shallow_pos"}, \code{"flat"},
+\code{"shallow_neg"}, \code{"steep_neg"}).
 }
 Baseline groups (\code{baseGroup}) are always labelled with letters
 (\code{"A"}, \code{"B"}, …); the letter scheme is never used for
 trajectory groups.}
 
 \item{interactive}{Logical. If \code{TRUE} (default), the function is
-allowed to use interactive helpers:
-\itemize{
-\item \code{\link{getTimePeriod}()} may prompt for time intervals and
-time-unit labels or dates,
-\item \code{\link{findGroups}()} may display plots and prompt for
-grouping decisions.
-}
-If \code{FALSE}, any required time intervals must be supplied via
-\code{time01} and \code{time12}, and any grouping decisions must be made
-non-interactively (according to the behaviour of \code{findGroups()} and
-\code{assignGroups()} when \code{interactive = FALSE}).}
+allowed to use interactive helpers such as \code{\link{getTimePeriod}()}
+and \code{\link{findGroups}()}. If \code{FALSE}, all required time
+intervals and grouping decisions must be available from arguments and/or
+columns in \code{data}.}
 }
 \value{
-An object of class \code{"srtm_analysis"}, which is a named list
-with the following components:
+An object of class \code{"srtm_analysis"}, which is a named list with
+components including (but not limited to):
 \describe{
-\item{Comparisons}{A tibble returned by \code{\link{compareOutcomes}()},
-containing one row per baseline × trajectory \emph{type} with t-tests
-of observed vs expected outcomes at \code{y2}.}
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{\\item\{GroupSummary\}\{A tibble returned by
-  \code{\link{summariseGroupOutcomes}()}, providing descriptive
-  statistics (e.g., group sizes, means, expected values) for each
-  baseline × trajectory type.\}
-
-\\item\{data\}\{The original data augmented with additional columns used in
-  the SRMT analysis, including (but not limited to):
-  \\itemize\{
-    \\item the ID column specified by \code{id_col} (or synthetic IDs),
-    \\item \code{dt01} and \code{dt12}: time intervals between
-      \code{y0}–\code{y1} and \code{y1}–\code{y2},
-    \\item \code{t0}, \code{t1}, \code{t2}: time positions for each
-      occasion,
-    \\item \code{m01}: the slope between \code{y0} and \code{y1},
-    \\item \code{baseGroup}: baseline group membership (letters),
-    \\item \code{trajGroup}: trajectory group membership (internal),
-    \\item \code{trajType}: a human-readable trajectory type label
-      derived from \code{m01} and \code{trajGroup}, using
-      \code{traj_label_scheme},
-    \\item \code{exp_y2}: the expected post score from group-specific
-      linear models.
-  \}\}
-
-\\item\{settings\}\{A list of analysis settings used to construct the
-  model, including:
-  \\itemize\{
-    \\item \code{y0}, \code{y1}, \code{y2}: the names of the time-point
-      columns,
-    \\item \code{id_col}: the name of the ID column,
-    \\item \code{time01}, \code{time12}: the numeric time intervals used,
-    \\item \code{group_first}: the grouping order (\code{"baseline"} or
-      \code{"slope"}),
-    \\item \code{traj_label_scheme}: the scheme used for trajectory
-      labels,
-    \\item \code{time_mode}: \code{"duration"} or \code{"dates"}
-      depending on how timing was specified,
-    \\item \code{time_unit}: a label for the time units (e.g. "days",
-      "weeks", "school terms"),
-    \\item \code{dates}: in dates mode, a list with \code{t0}, \code{t1},
-      \code{t2} storing the original Historical, Pre, and Post dates,
-    \\item \code{trajThresholds}: optional slope thresholds used to
-      label trajectories (if provided by
-      \code{\link{srtm_compute_trajType}()}).
-  \}\}
-
-\\item\{group_params\}\{A list of \code{"srtm_group_suggestion"} objects
-  returned by \code{\link{findGroups}()}, used to construct the
-  baseline and trajectory groupings. The list typically contains:
-  \\itemize\{
-    \\item \code{baseline_overall}: grouping of \code{y1} for the whole
-      sample (when \code{group_first = "baseline"}),
-    \\item \code{traj_overall}: grouping of \code{m01} for the whole
-      sample (when \code{group_first = "slope"}),
-    \\item \code{traj_by_base}: grouping objects for \code{m01} within
-      each baseline group (when \code{group_first = "baseline"}),
-    \\item \code{baseline_by_traj}: grouping objects for \code{y1}
-      within each trajectory group (when
-      \code{group_first = "slope"}).
-  \}\}
-}\if{html}{\out{</div>}}
-
+\item{Comparisons}{A tibble from \code{\link{compareOutcomes}()},
+containing one row per baseline × trajectory type with t-tests of
+observed vs expected outcomes at \code{y2}.}
+\item{Slope_Comparisons}{A tibble from \code{\link{compareSlopes}()}
+(where fitted), comparing slopes between intervals.}
+\item{GroupSummary}{A tibble from \code{\link{summariseGroupOutcomes}()},
+providing descriptive statistics (e.g., group sizes, means, SDs, expected
+values) for each baseline × trajectory type.}
+\item{data}{The original data augmented with additional columns used in
+the analysis (IDs, time variables, slopes, groups, expected outcomes,
+etc.).}
+\item{settings}{A list of analysis settings (column names, time intervals,
+grouping order, trajectory label scheme, time mode/unit, and any stored
+slope thresholds).}
+\item{group_params}{A list of \code{"srtm_group_suggestion"} objects from
+\code{\link{findGroups}()}, describing the baseline and trajectory
+groupings used.}
 }
+
+The object can be inspected directly, passed to \code{\link{summary}} for a
+tabular summary, or used by plotting helpers (when available).
 }
 \description{
 \code{SRTMAnalyse()} is the main entry point for the SRTM package. Given repeated
-measures for three time points (y0, y1, y2), it:
+measures at three occasions (y0, y1, y2), it:
 \itemize{
-\item sets up the time scale between measurements (either via supplied
-durations or interactively via dates or durations),
-\item computes individual slopes between y0 and y1,
-\item forms baseline groups and trajectory groups using
-\code{\link{findGroups}()} and \code{\link{assignGroups}()},
+\item sets up the time scale between measurements (from supplied arguments
+or time-related columns),
+\item computes individual slopes between y0–y1 and y1–y2,
+\item forms baseline and trajectory groups via \code{\link{findGroups}()}
+and \code{\link{assignGroups}()},
 \item fits group-specific linear models to predict post scores at y2,
-\item compares observed and expected outcomes using
-\code{\link{compareOutcomes}()},
-\item and produces group-level summaries via
+\item compares observed and expected outcomes via
+\code{\link{compareOutcomes}()} and, optionally,
+\code{\link{compareSlopes}()},
+\item and summarises group-level patterns via
 \code{\link{summariseGroupOutcomes}()}.
 }
-}
-\details{
-The result is a structured object of class \code{"srtm_analysis"} that
-contains:
+
+The result is a structured object of class \code{"srtm_analysis"} containing:
 \itemize{
-\item the augmented analysis data (with IDs, time variables, slopes,
-groups, expected outcomes, etc.),
-\item group-level comparisons of observed vs expected outcomes,
-\item compact summaries for each baseline × trajectory type, and
-\item settings and grouping parameters used to construct the model.
+\item the augmented analysis data (IDs, time variables, slopes, groups,
+expected outcomes, etc.),
+\item group-level comparisons of observed vs expected outcomes and slopes,
+\item compact summaries for each baseline × trajectory type,
+\item and the settings and grouping parameters used to construct the model.
 }
 }
+\section{Time handling}{
+
+
+\code{SRTMAnalyse()} can obtain the time intervals between occasions in several
+ways. The priority order is:
+
+\enumerate{
+\item \strong{Explicit arguments}:
+\itemize{
+\item If \code{time01} and \code{time12} are supplied as positive
+numerics, they are used directly (after validation).
+}
+\item \strong{Numeric time-interval columns}:
+\itemize{
+\item If the data contain numeric columns named \code{time01} and
+\code{time12}, their (median) values are used as dt01 and dt12.
+}
+\item \strong{Absolute time columns t0, t1, t2}:
+\itemize{
+\item If columns corresponding to \code{t0}, \code{t1}, \code{t2} are
+present (either with the default names \code{"t0"}, \code{"t1"},
+\code{"t2"} or user-specified names), the function attempts to:
+\itemize{
+\item interpret them as dates (using \pkg{lubridate} when
+needed) and derive dt01 and dt12 from their differences,
+choosing a sensible time unit (years, months, weeks, or
+days), or
+\item interpret them as numeric times with \code{t0 < t1 < t2}
+and set \code{dt01 = t1 - t0}, \code{dt12 = t2 - t1},
+asking only for a time-unit label.
+}
+}
+\item \strong{Interactive fallback}:
+\itemize{
+\item If none of the above sources provide valid time intervals and
+\code{interactive = TRUE}, the function calls
+\code{\link{getTimePeriod}()} to obtain dt01 and dt12 (and a time
+unit label) interactively.
+\item If \code{interactive = FALSE} and time intervals cannot be
+determined, an error is thrown.
+}
+}
+
+Internally, numeric time intervals are stored as \code{dt01} and \code{dt12},
+and either date-based (\code{t0}, \code{t1}, \code{t2}) or centred numeric
+time variables are added to the analysis data as appropriate.
+}
+
