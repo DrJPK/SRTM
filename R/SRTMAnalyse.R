@@ -476,6 +476,14 @@ SRTMAnalyse <- function(data,
     )
     df$baseGroup <- factor(as.character(df$baseGroup), ordered = TRUE)
 
+    if (any(is.na(df$baseGroup))) {
+      rlang::inform(
+        "Some rows had NA baseGroup; assigning these to 'Unknown' and skipping subgroup findGroups() for them.",
+        class = "srtm_analyse_traj_na_handled"
+      )
+      df$baseGroup <- forcats::fct_explicit_na(df$baseGroup, na_level = "Unknown")
+    }
+
     rlang::inform(
       glue::glue(
         "SRTMAnalyse: now finding trajectory groups (trajGroup) within each baseGroup using `m01` and label_scheme = '{traj_label_scheme}'."
@@ -491,7 +499,10 @@ SRTMAnalyse <- function(data,
         current_bg <- as.character(.g$baseGroup[[1]])
         n_rows     <- nrow(.x)
         n_nonmiss  <- sum(!is.na(.x$m01))
-
+        if (identical(current_bg, "Unknown")) {
+          .x$trajGroup <- factor("Unknown", levels = "Unknown", ordered = TRUE)
+          return(.x)
+        }
         rlang::inform(
           glue::glue(
             "  Analysing trajGroups within baseGroup = '{current_bg}' (n = {n_rows}, non-missing m01 = {n_nonmiss})."
@@ -586,6 +597,14 @@ SRTMAnalyse <- function(data,
     )
     df$trajGroup <- factor(as.character(df$trajGroup), ordered = TRUE)
 
+    if (any(is.na(df$trajGroup))) {
+      rlang::inform(
+        "Some rows had NA trajGroup; assigning these to 'Unknown' and skipping subgroup findGroups() for them.",
+        class = "srtm_analyse_traj_na_handled"
+      )
+      df$trajGroup <- forcats::fct_explicit_na(df$trajGroup, na_level = "Unknown")
+    }
+
     rlang::inform(
       glue::glue(
         "SRTMAnalyse: now finding baseline groups (baseGroup) within each trajGroup using `{y1_name}` (letters)."
@@ -601,6 +620,10 @@ SRTMAnalyse <- function(data,
         current_tg <- as.character(.g$trajGroup[[1]])
         n_rows     <- nrow(.x)
         n_nonmiss  <- sum(!is.na(.x[[y1_name]]))
+        if (identical(current_tg, "Unknown")) {
+          .x$baseGroup <- factor("Unknown", levels = "Unknown", ordered = TRUE)
+          return(.x)
+        }
 
         rlang::inform(
           glue::glue(

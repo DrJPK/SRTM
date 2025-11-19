@@ -211,15 +211,19 @@ report <- function(results,
   # --------------------------------------------------------------------------
   if (!("baseGroup" %in% names(df))) {
     trajectory_bullets <- "  * Baseline and trajectory groupings were used, but detailed descriptors could not be constructed."
-    combo_desc <- NULL
   } else {
+
+    traj_col <- gv$traj_col  # e.g. "trajType" or "trajGroup"
+
     combo_desc <- df %>%
       dplyr::filter(
         !is.na(.data$baseGroup),
-        !is.na(traj_var),
-        as.character(traj_var) != "Unknown"
+        !is.na(.data[[traj_col]]),
+        as.character(.data[[traj_col]]) != "Unknown"
       ) %>%
-      dplyr::mutate(traj_for_report = traj_var) %>%
+      dplyr::mutate(
+        traj_for_report = .data[[traj_col]]
+      ) %>%
       dplyr::group_by(baseGroup, traj_for_report) %>%
       dplyr::summarise(
         mean_y1 = mean(.data[[y1_name]], na.rm = TRUE),

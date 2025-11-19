@@ -141,11 +141,17 @@
 
       pretty_p <- if (is.na(pval)) {
         NA_character_
-      } else if (pval < 1e-4) {
-        "<.0001"
+      } else if (pval < 1e-3) {
+        "<.001"
       } else {
         formatC(pval, digits = 3, format = "fg")
       }
+
+      # pretty_p <- if (is.na(pval)) {
+      #   NA_character_
+      # }else{
+      #   cleaner::format_p_value(pval)
+      # }
 
       tibble::tibble(
         t_value  = unname(tt$statistic),
