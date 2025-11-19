@@ -1,53 +1,34 @@
-#' Produce an APA-style summary of SRTM analysis results
+#' Produce an APA-style narrative summary of SRTM analysis results
 #'
-#' @description
-#' Given an object returned by [SRTMAnalyse()], `report()` constructs:
-#' \itemize{
-#'   \item a set of APA-style sentences suitable for a Results section,
-#'   \item a compact table of baseline × trajectory descriptors, and
-#'   \item a collection of ggplot/patchwork figures that visualise
-#'         cut-points, trajectories, and distributional summaries,
-#'         including optional per-group panels.
-#' }
-#'
-#' @param results An object of class \code{"srtm_analysis"} as returned by
-#'   [SRTMAnalyse()].
+#' @param results An object of class \code{srtm_analysis} as returned by
+#'   \code{SRTMAnalyse()}.
 #' @param alpha Numeric significance level for interpreting p-values
 #'   (default \code{0.05}).
 #' @param plot_palette Character palette name passed to plotting helpers
-#'   (e.g., [setPlotPalette()], [plotSRTMPanel()],
-#'   [plotSRTMPanelSummary()], [srtm_build_combined_cutpoint_plot()]).
+#'   (e.g., \code{setPlotPalette()}, \code{plotSRTMPanel()},
+#'   \code{plotSRTMPanelSummary()}, \code{srtm_build_combined_cutpoint_plot()}).
 #'   One of \code{"simple"}, \code{"pastel"}, \code{"colourblind"}, or
-#'   \code{"greys"}. If \code{results$settings$plot_palette} is present,
-#'   that value is used in preference.
+#'   \code{"greys"}. If the SRTM analysis settings contain a
+#'   \code{plot_palette} entry, that value is used in preference.
 #' @param debug Logical; if \code{TRUE}, emits verbose diagnostic messages
-#'   (via [rlang::inform()]) and does not suppress errors when building
-#'   figures. Intended mainly for development and debugging.
+#'   and does not suppress errors when building the cut-point figure.
 #'
-#' @return A list with components:
-#' \describe{
-#'   \item{text}{Character vector of sentences suitable for a Results
-#'     section.}
+#' @return A list with:
+#'   \item{text}{A character vector of sentences suitable for a Results section.}
 #'   \item{table}{A tibble summarising group sizes, mean baseline scores,
-#'     standard deviations, and mean slopes for each baseline × trajectory
-#'     type.}
+#'     standard deviations, and mean slopes for each baseline × trajectory type.}
 #'   \item{figures}{A named list of ggplot/patchwork objects:
 #'     \code{fig1_cutpoints}, \code{fig2_trajectories},
-#'     \code{fig3_summary}, and \code{per_group} (itself a named list of
-#'     group-specific patchwork figures). Any element may be \code{NULL}
-#'     if figure construction fails.}
-#'   \item{figure_order}{A character vector giving the intended high-level
-#'     order in which figures should be printed, e.g.
-#'     \code{c("fig1_cutpoints", "fig2_trajectories",
-#'             "fig3_summary", "per_group")}.}
-#' }
-#'
-#' @importFrom purrr pmap_chr
+#'     \code{fig3_summary}. Any element may be \code{NULL} if figure
+#'     construction fails.}
+#'   \item{figure_order}{A character vector giving the order in which
+#'     figures are intended to be printed:
+#'     \code{c("fig1_cutpoints", "fig2_trajectories", "fig3_summary")}.}
 #'
 #' @export
 report <- function(results,
                    alpha = 0.05,
-                   plot_palette = c("simple", "pastel", "modern", "colourblind", "greys"),
+                   plot_palette = c("simple","pastel","colourblind","greys"),
                    debug = FALSE) {
 
   # --- safety checks --------------------------------------------------------
@@ -211,7 +192,6 @@ report <- function(results,
   # --------------------------------------------------------------------------
   if (!("baseGroup" %in% names(df))) {
     trajectory_bullets <- "  * Baseline and trajectory groupings were used, but detailed descriptors could not be constructed."
-    combo_desc <- NULL
   } else {
     combo_desc <- df %>%
       dplyr::filter(
@@ -396,7 +376,7 @@ report <- function(results,
   comps <- results$Comparisons
   if (is.null(comps) || nrow(comps) == 0L) {
     rlang::warn(
-      "No Comparisons component found in `results`; outcome-based sentences will be limited.",
+      "No Comparisons component found in `results`; outcome-based sentences will be omitted.",
       class = "srtm_reporting_no_comparisons"
     )
     comps <- NULL
@@ -488,25 +468,22 @@ report <- function(results,
     )
   }
 
-  # subset of columns for group-level iteration
   if ("trajType" %in% names(full)) {
-    full_for_groups <- full %>%
+    full_for_sentences <- full %>%
       dplyr::select(
         baseGroup, trajType,
         n, Mean, SD, Slope,
         t_outcome, diff_outcome, p_outcome, pretty_p_outcome, df_outcome,
         t_slope, diff_slope, p_slope, pretty_p_slope, df_slope
       )
-    traj_col_for_groups <- "trajType"
   } else {
-    full_for_groups <- full %>%
+    full_for_sentences <- full %>%
       dplyr::select(
         baseGroup, trajGroup,
         n, Mean, SD, Slope,
         t_outcome, diff_outcome, p_outcome, pretty_p_outcome, df_outcome,
         t_slope, diff_slope, p_slope, pretty_p_slope, df_slope
       )
-    traj_col_for_groups <- "trajGroup"
   }
 
   format_p <- function(p, pretty_p) {
@@ -523,14 +500,85 @@ report <- function(results,
     sub("^0", "", out)
   }
 
+  per_group_sentences <- purrr::pmap_chr(
+    full_for_sentences,
+    function(baseGroup,
+             trajType_or_group,
+             n, Mean, SD, Slope,
+             t_outcome, diff_outcome, p_outcome, pretty_p_outcome, df_outcome,
+             t_slope, diff_slope, p_slope, pretty_p_slope, df_slope) {
+
+      traj_label <- trajType_or_group
+
+      if (is.null(Mean) || is.null(SD) || is.null(Slope) ||
+          is.na(Mean) || is.na(SD) || is.na(Slope)) {
+        return(glue::glue(
+          "Group {baseGroup}{traj_label} did not have sufficient data for descriptive or inferential statistics."
+        ))
+      }
+
+      group_name <- glue::glue("Group {baseGroup}{traj_label}")
+
+      direction_out <- if (!is.na(diff_outcome) && diff_outcome < 0) "lower" else "higher"
+      abs_diff_out  <- if (is.na(diff_outcome)) NA_real_ else abs(diff_outcome)
+
+      M_fmt     <- sprintf("%.2f", Mean)
+      SD_fmt    <- sprintf("%.3f", SD)
+      slope_fmt <- sprintf("%.2f", Slope)
+      diff_fmt  <- if (is.na(abs_diff_out)) NA_character_ else sprintf("%.2f", abs_diff_out)
+
+      t_out_fmt  <- if (is.na(t_outcome)) NA_character_ else sprintf("%.2f", t_outcome)
+      df_out_fmt <- if (is.na(df_outcome)) NA_character_ else sprintf("%.0f", df_outcome)
+      p_out_fmt  <- format_p(p_outcome, pretty_p_outcome)
+
+      if (is.na(p_outcome) || is.na(diff_outcome)) {
+        out_sig_clause  <- "and no statistical test could be computed for this group."
+        out_stat_clause <- ""
+      } else {
+        if (p_outcome < alpha) {
+          out_sig_clause <- "and this difference was statistically significant"
+        } else {
+          out_sig_clause <- "and this difference was not statistically significant"
+        }
+        out_stat_clause <- glue::glue(
+          ", t({df_out_fmt}) = {t_out_fmt}, p = {p_out_fmt}"
+        )
+      }
+
+      outcome_sentence <- glue::glue(
+        "{group_name} (M[{y1_name}] = {M_fmt}, SD[{y1_name}] = {SD_fmt}, Δy/Δt = {slope_fmt} per {time_unit}) ",
+        "had an outcome that was {diff_fmt} points {direction_out} than expected, {out_sig_clause}{out_stat_clause}."
+      )
+
+      if (is.na(diff_slope) || is.na(p_slope)) {
+        return(outcome_sentence)
+      }
+
+      slope_dir       <- if (diff_slope < 0) "decreased" else "increased"
+      abs_diff_slope  <- abs(diff_slope)
+      diff_slope_fmt  <- sprintf("%.2f", abs_diff_slope)
+      t_slope_fmt     <- sprintf("%.2f", t_slope)
+      df_slope_fmt    <- sprintf("%.0f", df_slope)
+      p_slope_fmt     <- format_p(p_slope, pretty_p_slope)
+      slope_sig       <- if (p_slope < alpha) "statistically significant" else "not statistically significant"
+
+      slope_sentence <- glue::glue(
+        " The difference between the historical (y0–y1) and subsequent (y1–y2) slopes was {diff_slope_fmt} points per {time_unit} ({slope_dir}), ",
+        "which was {slope_sig}, t({df_slope_fmt}) = {t_slope_fmt}, p = {p_slope_fmt}."
+      )
+
+      paste0(outcome_sentence, slope_sentence)
+    }
+  )
+
   # --------------------------------------------------------------------------
   # Figure 2: trajectory panel plot (plotSRTMPanel)
   # --------------------------------------------------------------------------
   fig2 <- tryCatch(
     {
       plotSRTMPanel(
-        data               = results$data,
-        palette            = plot_palette,
+        data              = results$data,
+        palette           = plot_palette,
         plot_time_discrete = FALSE
       )
     },
@@ -631,395 +679,6 @@ report <- function(results,
   }
 
   # --------------------------------------------------------------------------
-  # NEW: per-group detailed sections and group-specific figures
-  # --------------------------------------------------------------------------
-  group_text_blocks <- character(0)
-  per_group_list    <- list()
-
-  # convenient mapping from combo_desc for headings
-  if (!is.null(combo_desc) && nrow(combo_desc) > 0L) {
-    combo_map <- combo_desc %>%
-      dplyr::mutate(
-        code = paste0(baseGroup, traj_for_report)
-      ) %>%
-      dplyr::select(code, baseline_desc, traj_desc)
-  } else {
-    combo_map <- tibble::tibble(
-      code          = character(0),
-      baseline_desc = character(0),
-      traj_desc     = character(0)
-    )
-  }
-
-  # helper to get "Historical"/"Pre"/"Post" labels
-  time_label_map <- c(
-    y0 = "Historical",
-    y1 = "Pre",
-    y2 = "Post"
-  )
-
-  # starting figure index for per-group patchworks
-  base_group_fig_index <- 4L
-
-  if (nrow(full_for_groups) > 0L && "baseGroup" %in% names(df)) {
-
-    for (i in seq_len(nrow(full_for_groups))) {
-      row_i <- full_for_groups[i, , drop = FALSE]
-
-      baseGroup_i <- as.character(row_i$baseGroup[[1]])
-      traj_i <- as.character(row_i[[traj_col_for_groups]][[1]])
-
-      code_i <- paste0(baseGroup_i, traj_i)
-
-      # ---- outcome sentence reused from earlier logic ----------------------
-      Mean_i      <- row_i$Mean[[1]]
-      SD_i        <- row_i$SD[[1]]
-      Slope_i     <- row_i$Slope[[1]]
-      t_outcome_i <- row_i$t_outcome[[1]]
-      diff_out_i  <- row_i$diff_outcome[[1]]
-      p_out_i     <- row_i$p_outcome[[1]]
-      pp_out_i    <- row_i$pretty_p_outcome[[1]]
-      df_out_i    <- row_i$df_outcome[[1]]
-
-      t_slope_i   <- row_i$t_slope[[1]]
-      diff_slope_i<- row_i$diff_slope[[1]]
-      p_slope_i   <- row_i$p_slope[[1]]
-      pp_slope_i  <- row_i$pretty_p_slope[[1]]
-      df_slope_i  <- row_i$df_slope[[1]]
-
-      # basic checks
-      if (is.null(Mean_i) || is.null(SD_i) || is.null(Slope_i) ||
-          is.na(Mean_i) || is.na(SD_i) || is.na(Slope_i)) {
-        outcome_sentence_i <- glue::glue(
-          "Group {code_i} did not have sufficient data for descriptive or inferential statistics."
-        )
-        slope_sentence_i <- ""
-      } else {
-
-        direction_out <- if (!is.na(diff_out_i) && diff_out_i < 0) "lower" else "higher"
-        abs_diff_out  <- if (is.na(diff_out_i)) NA_real_ else abs(diff_out_i)
-
-        M_fmt_i     <- sprintf("%.2f", Mean_i)
-        SD_fmt_i    <- sprintf("%.3f", SD_i)
-        slope_fmt_i <- sprintf("%.2f", Slope_i)
-        diff_fmt_i  <- if (is.na(abs_diff_out)) NA_character_ else sprintf("%.2f", abs_diff_out)
-
-        t_out_fmt_i  <- if (is.na(t_outcome_i)) NA_character_ else sprintf("%.2f", t_outcome_i)
-        df_out_fmt_i <- if (is.na(df_out_i)) NA_character_ else sprintf("%.0f", df_out_i)
-        p_out_fmt_i  <- format_p(p_out_i, pp_out_i)
-
-        if (is.na(p_out_i) || is.na(diff_out_i)) {
-          out_sig_clause_i  <- "and no statistical test could be computed for this group."
-          out_stat_clause_i <- ""
-        } else {
-          if (p_out_i < alpha) {
-            out_sig_clause_i <- "and this difference was statistically significant"
-          } else {
-            out_sig_clause_i <- "and this difference was not statistically significant"
-          }
-          out_stat_clause_i <- glue::glue(
-            ", t({df_out_fmt_i}) = {t_out_fmt_i}, p = {p_out_fmt_i}"
-          )
-        }
-
-        outcome_sentence_i <- glue::glue(
-          "Group {code_i} (M[{y1_name}] = {M_fmt_i}, SD[{y1_name}] = {SD_fmt_i}, Δy/Δt = {slope_fmt_i} per {time_unit}) ",
-          "had an outcome that was {diff_fmt_i} points {direction_out} than expected, {out_sig_clause_i}{out_stat_clause_i}."
-        )
-
-        if (is.na(diff_slope_i) || is.na(p_slope_i)) {
-          slope_sentence_i <- ""
-        } else {
-          slope_dir_i      <- if (diff_slope_i < 0) "decreased" else "increased"
-          abs_diff_slope_i <- abs(diff_slope_i)
-          diff_slope_fmt_i <- sprintf("%.2f", abs_diff_slope_i)
-          t_slope_fmt_i    <- sprintf("%.2f", t_slope_i)
-          df_slope_fmt_i   <- sprintf("%.0f", df_slope_i)
-          p_slope_fmt_i    <- format_p(p_slope_i, pp_slope_i)
-          slope_sig_i      <- if (p_slope_i < alpha) "statistically significant" else "not statistically significant"
-
-          slope_sentence_i <- glue::glue(
-            " The difference between the historical (y0–y1) and subsequent (y1–y2) slopes was {diff_slope_fmt_i} points per {time_unit} ({slope_dir_i}), ",
-            "which was {slope_sig_i}, t({df_slope_fmt_i}) = {t_slope_fmt_i}, p = {p_slope_fmt_i}."
-          )
-        }
-      }
-
-      # ---- heading based on baseline + trajectory descriptors --------------
-      if (nrow(combo_map) > 0L && code_i %in% combo_map$code) {
-        baseline_desc_full <- combo_map$baseline_desc[combo_map$code == code_i][1]
-        traj_desc_i        <- combo_map$traj_desc[combo_map$code == code_i][1]
-      } else {
-        baseline_desc_full <- "an average baseline score compared to the population"
-        traj_desc_i        <- traj_desc_map[traj_i] %||% "a particular trajectory pattern"
-      }
-
-      # strip leading a/an and everything after "score"
-      bd <- tolower(baseline_desc_full)
-      bd <- sub("^(a|an)\\s+", "", bd)
-      bd <- sub("\\s*score.*$", "", bd)
-      if (!nzchar(bd)) bd <- "average baseline"
-      bd <- paste0(toupper(substr(bd, 1, 1)), substr(bd, 2, nchar(bd)))
-
-      heading_i <- glue::glue(
-        "Group {code_i}: {bd} and {traj_desc_i}."
-      )
-
-      # ---- subset data for this group --------------------------------------
-      if (traj_col_for_groups == "trajType") {
-        df_g <- df %>%
-          dplyr::filter(
-            .data$baseGroup == !!baseGroup_i,
-            .data$trajType  == !!traj_i
-          )
-      } else {
-        df_g <- df %>%
-          dplyr::filter(
-            .data$baseGroup == !!baseGroup_i,
-            .data$trajGroup == !!traj_i
-          )
-      }
-
-      # ---- figure numbering -------------------------------------------------
-      fig_idx_i <- base_group_fig_index + (i - 1L)
-
-      # ---- panel (ii): median / IQR & Wilcoxon comparison at Post ----------
-      obs_post <- df_g[[y2_name]]
-      exp_post <- if ("exp_y2" %in% names(df_g)) df_g$exp_y2 else rep(NA_real_, nrow(df_g))
-
-      obs_post <- obs_post[is.finite(obs_post)]
-      exp_post <- exp_post[is.finite(exp_post)]
-
-      # medians / IQRs
-      med_obs <- if (length(obs_post)) stats::median(obs_post, na.rm = TRUE) else NA_real_
-      med_exp <- if (length(exp_post)) stats::median(exp_post, na.rm = TRUE) else NA_real_
-
-      iqr_obs <- if (length(obs_post)) {
-        qs <- stats::quantile(obs_post, probs = c(.25, .75), na.rm = TRUE)
-        qs[2] - qs[1]
-      } else NA_real_
-
-      iqr_exp <- if (length(exp_post)) {
-        qs <- stats::quantile(exp_post, probs = c(.25, .75), na.rm = TRUE)
-        qs[2] - qs[1]
-      } else NA_real_
-
-      # IQR comparison phrase
-      iqr_phrase <- ""
-      if (is.finite(iqr_obs) && is.finite(iqr_exp) && iqr_exp > 0) {
-        ratio_iqr <- iqr_obs / iqr_exp
-        if (ratio_iqr < 0.6) {
-          iqr_phrase <- "The observed scores showed a much narrower spread than expected."
-        } else if (ratio_iqr < 0.9) {
-          iqr_phrase <- "The observed scores showed a somewhat narrower spread than expected."
-        } else if (ratio_iqr <= 1.1) {
-          iqr_phrase <- "The spread of observed scores was similar to the expected spread."
-        } else if (ratio_iqr <= 1.5) {
-          iqr_phrase <- "The observed scores showed a somewhat wider spread than expected."
-        } else {
-          iqr_phrase <- "The observed scores showed a much wider spread than expected."
-        }
-      }
-
-      # Wilcoxon–Mann–Whitney test
-      wilcox_sentence <- ""
-      if (length(obs_post) >= 2L && length(exp_post) >= 2L) {
-        wt <- tryCatch(
-          stats::wilcox.test(obs_post, exp_post, alternative = "two.sided"),
-          error = function(e) NULL
-        )
-        if (!is.null(wt)) {
-          p_w  <- wt$p.value
-          Wval <- unname(wt$statistic)
-          p_w_fmt <- format_p(p_w, NA)
-          sig_w <- if (p_w < alpha) "statistically significant" else "not statistically significant"
-          wilcox_sentence <- glue::glue(
-            " A Wilcoxon–Mann–Whitney test comparing observed and expected Post scores indicated that this difference in central tendency was {sig_w}, W = {round(Wval, 2)}, p = {p_w_fmt} (α = {alpha})."
-          )
-        } else {
-          wilcox_sentence <- " A Wilcoxon–Mann–Whitney test could not be computed for this group."
-        }
-      } else if (length(obs_post) > 0 || length(exp_post) > 0) {
-        wilcox_sentence <- " A Wilcoxon–Mann–Whitney test could not be computed because there were insufficient non-missing scores in one or both distributions."
-      }
-
-      med_sentence <- if (is.finite(med_obs) && is.finite(med_exp)) {
-        glue::glue(
-          "At the Post measurement, the median observed score was {round(med_obs, 2)}, compared to a median expected score of {round(med_exp, 2)}."
-        )
-      } else if (is.finite(med_obs)) {
-        glue::glue(
-          "At the Post measurement, the median observed score was {round(med_obs, 2)}, but the corresponding expected distribution was not available."
-        )
-      } else {
-        ""
-      }
-
-      iqr_sentence <- if (nzchar(iqr_phrase)) iqr_phrase else ""
-
-      panel_ii_sentence <- glue::glue(
-        "Figure {fig_idx_i}ii shows the descriptive distributions of students’ observed scores compared to their expected distribution at each time point. ",
-        "{med_sentence} {iqr_sentence}{wilcox_sentence}"
-      )
-
-      # ---- panel (iii): SD / skewness / kurtosis across time ---------------
-      y0_vec <- df_g[[y0_name]]
-      y1_vec <- df_g[[y1_name]]
-      y2_vec <- df_g[[y2_name]]
-
-      sd_vec <- c(
-        y0 = stats::sd(y0_vec, na.rm = TRUE),
-        y1 = stats::sd(y1_vec, na.rm = TRUE),
-        y2 = stats::sd(y2_vec, na.rm = TRUE)
-      )
-
-      skew_vec <- c(
-        y0 = if (length(na.omit(y0_vec)) > 2L) moments::skewness(y0_vec, na.rm = TRUE) else NA_real_,
-        y1 = if (length(na.omit(y1_vec)) > 2L) moments::skewness(y1_vec, na.rm = TRUE) else NA_real_,
-        y2 = if (length(na.omit(y2_vec)) > 2L) moments::skewness(y2_vec, na.rm = TRUE) else NA_real_
-      )
-
-      kurt_vec <- c(
-        y0 = if (length(na.omit(y0_vec)) > 3L) moments::kurtosis(y0_vec, na.rm = TRUE) else NA_real_,
-        y1 = if (length(na.omit(y1_vec)) > 3L) moments::kurtosis(y1_vec, na.rm = TRUE) else NA_real_,
-        y2 = if (length(na.omit(y2_vec)) > 3L) moments::kurtosis(y2_vec, na.rm = TRUE) else NA_real_
-      )
-
-      panel_iii_sentence <- ""
-
-      if (all(is.finite(sd_vec))) {
-        t_sd_max <- names(sd_vec)[which.max(sd_vec)]
-        t_sd_min <- names(sd_vec)[which.min(sd_vec)]
-
-        sd_sentence <- glue::glue(
-          "Figure {fig_idx_i}iii shows the underlying distributions of students’ scores at each time point. ",
-          "For this group, variability in scores (standard deviation) was lowest at {time_label_map[[t_sd_min]]} and highest at {time_label_map[[t_sd_max]]}, ",
-          "indicating that scores were most tightly clustered at {time_label_map[[t_sd_min]]} and most dispersed at {time_label_map[[t_sd_max]]}."
-        )
-
-        # skewness summary
-        skew_finite <- skew_vec[is.finite(skew_vec)]
-        skew_sentence <- ""
-        if (length(skew_finite) > 0L) {
-          avg_skew <- mean(skew_finite)
-          if (abs(avg_skew) < 0.5) {
-            skew_sentence <- " Across the three time points, the score distributions were approximately symmetric."
-          } else if (avg_skew > 0) {
-            skew_sentence <- " Across the three time points, the score distributions tended to show a longer tail towards higher scores."
-          } else {
-            skew_sentence <- " Across the three time points, the score distributions tended to show a longer tail towards lower scores."
-          }
-        }
-
-        # kurtosis summary (relative within group)
-        kurt_finite <- kurt_vec[is.finite(kurt_vec)]
-        kurt_sentence <- ""
-        if (length(kurt_finite) > 0L) {
-          t_kurt_max <- names(kurt_vec)[which.max(kurt_vec)]
-          t_kurt_min <- names(kurt_vec)[which.min(kurt_vec)]
-          kurt_sentence <- glue::glue(
-            " The distributions were most sharply peaked at {time_label_map[[t_kurt_max]]} and relatively flatter at {time_label_map[[t_kurt_min]]}."
-          )
-        }
-
-        panel_iii_sentence <- paste0(sd_sentence, skew_sentence, kurt_sentence)
-      }
-
-      # ---- panel (i): reference to existing outcome sentence ----------------
-      panel_i_sentence <- glue::glue(
-        "Figure {fig_idx_i}i shows the trajectories of students’ observed scores compared to their expected trajectories for this group. ",
-        "As can be seen, {outcome_sentence_i}{slope_sentence_i}"
-      )
-
-      # ---- overview sentence for the combined figure -----------------------
-      figure_overview_sentence <- glue::glue(
-        "Figure {fig_idx_i} shows the same data as Figures 2 and 3, but restricted to Group {code_i}. ",
-        "Panel (i) focuses on individual trajectories, panel (ii) on the distribution of observed and expected scores at each time point, and panel (iii) on the underlying score distributions across time."
-      )
-
-      # ---- build patchwork figure: A|B|C with i, ii, iii tags --------------
-      # A: trajectories (no facets, no legend)
-      pA <- tryCatch(
-        {
-          plotSRTMPanel(
-            data               = df_g,
-            facet              = FALSE,
-            palette            = plot_palette,
-            plot_time_discrete = FALSE
-          ) +
-            ggplot2::theme(legend.position = "none")
-        },
-        error = function(e) NULL
-      )
-
-      # B: summary boxplots
-      pB <- tryCatch(
-        {
-          plotSRTMPanelSummary(
-            data        = df_g,
-            facet       = FALSE,
-            palette     = plot_palette,
-            geom        = "boxplot",
-            show_legend = FALSE
-          )
-        },
-        error = function(e) NULL
-      )
-
-      # C: summary violins
-      pC <- tryCatch(
-        {
-          plotSRTMPanelSummary(
-            data        = df_g,
-            facet       = FALSE,
-            palette     = plot_palette,
-            geom        = "violin",
-            show_legend = FALSE
-          )
-        },
-        error = function(e) NULL
-      )
-
-      group_fig <- NULL
-      if (!is.null(pA) && !is.null(pB) && !is.null(pC)) {
-        group_fig <- patchwork::wrap_plots(
-          pA, pB, pC,
-          ncol = 3
-        ) +
-          patchwork::plot_annotation(
-            tag_levels = "i"  # i, ii, iii
-          )
-      }
-
-      # ---- collect text for this group -------------------------------------
-      group_text_i <- c(
-        heading_i,
-        figure_overview_sentence,
-        panel_i_sentence,
-        panel_ii_sentence,
-        panel_iii_sentence
-      )
-
-      group_text_blocks <- c(group_text_blocks, group_text_i)
-
-      per_group_list[[i]] <- list(
-        group_code     = code_i,
-        baseGroup      = baseGroup_i,
-        traj_label     = traj_i,
-        figure_number  = fig_idx_i,
-        heading        = heading_i,
-        text           = group_text_i[-1],  # everything after heading
-        figure         = group_fig
-      )
-    } # end for each group
-  }
-
-  # give names to per_group list
-  if (length(per_group_list) > 0L) {
-    names(per_group_list) <- vapply(per_group_list, `[[`, character(1), "group_code")
-  }
-
-  # --------------------------------------------------------------------------
   # Assemble text in intended order
   # --------------------------------------------------------------------------
   text <- c(
@@ -1030,7 +689,7 @@ report <- function(results,
     figure2_sentence,
     bridge_sentence,
     figure3_sentence,
-    group_text_blocks
+    per_group_sentences
   )
 
   if (debug) {
@@ -1038,28 +697,20 @@ report <- function(results,
       glue::glue(
         "report(): finished; returning {length(text)} sentences and figures (cutpoints = {if (is.null(cutpoint_plot)) 'NULL' else 'ok'}, ",
         "trajectories = {if (is.null(fig2)) 'NULL' else 'ok'}, ",
-        "summary = {if (is.null(fig3)) 'NULL' else 'ok'}, ",
-        "per-group figures = {length(per_group_list)})."
+        "summary = {if (is.null(fig3)) 'NULL' else 'ok'})."
       ),
       class = "srtm_report_debug"
     )
   }
 
   list(
-    text   = text,
-    table  = summarised,
-    figures = list(
+    text         = text,
+    table        = summarised,
+    figures      = list(
       fig1_cutpoints    = cutpoint_plot,
       fig2_trajectories = fig2,
-      fig3_summary      = fig3,
-      per_group         = per_group_list
+      fig3_summary      = fig3
     ),
-    figure_order = c(
-      "fig1_cutpoints",
-      "fig2_trajectories",
-      "fig3_summary",
-      "per_group"
-    )
+    figure_order = c("fig1_cutpoints", "fig2_trajectories", "fig3_summary")
   )
 }
-

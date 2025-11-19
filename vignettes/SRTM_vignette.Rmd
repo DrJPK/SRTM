@@ -78,11 +78,13 @@ The main entry point is `SRTMAnalyse()`. For basic usage with the demo data:
 ```{r}
 res <- SRTMAnalyse(
   data        = x,
-  y0          = y0,
-  y1          = y1,
-  y2          = y2,
+  y0          = "y0",
+  y1          = "y1",
+  y2          = "y2",
   id_col      = "ID",
-  group_first = "baseline",
+  time01      = 1,
+  time12      = 1,
+  group_first = "slope",
   interactive = FALSE
 )
 ```

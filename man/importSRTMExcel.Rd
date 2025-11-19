@@ -12,6 +12,11 @@ importSRTMExcel(
   y0 = NULL,
   y1 = NULL,
   y2 = NULL,
+  t0 = NULL,
+  t1 = NULL,
+  t2 = NULL,
+  time01 = NULL,
+  time12 = NULL,
   extra_vars = NULL,
   missing_tokens = NULL
 )

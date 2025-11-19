@@ -23,24 +23,12 @@ the absolute outcome difference),
 \item{...}{Ignored, included for method compatibility.}
 }
 \value{
-A tibble with one row per Base × Trajectory type combination, including:
-\itemize{
-\item grouping variables (\code{baseGroup}, \code{trajType});
-\item counts and proportions from \code{GroupSummary};
-\item mean observed and expected outcomes and their difference
-(typically \code{mean_obs}, \code{mean_exp}, \code{mean_diff});
-\item (if available) outcome comparison statistics:
-\code{t_outcome}, \code{diff_outcome}, \code{p_outcome},
-\code{df_outcome};
-\item (if available) slope comparison statistics:
-\code{t_slope}, \code{diff_slope}, \code{p_slope},
-\code{df_slope}.
-}
-
-The tibble is printed and also returned invisibly.
+A tibble with one row per Base × Trajectory type combination (the merged
+table used to construct the printed summaries). The tibble is returned
+invisibly.
 }
 \description{
-Produces a merged summary table of group-wise outcomes and statistical
+Produces compact summary tables of group-wise outcomes and statistical
 comparisons for an \code{"srtm_analysis"} object. This combines the
 group-level summaries (from \code{\link[=summariseGroupOutcomes]{summariseGroupOutcomes()}}) with the
 t-test-style comparisons for outcomes (from \code{\link[=compareOutcomes]{compareOutcomes()}}) and,

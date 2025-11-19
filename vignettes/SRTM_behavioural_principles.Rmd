@@ -303,10 +303,12 @@ x <- SRTM_synth_data
 # Run analysis non-interactively for the vignette
 res <- SRTMAnalyse(
   data        = x,
-  y0          = y0,
-  y1          = y1,
-  y2          = y2,
+  y0          = "y0",
+  y1          = "y1",
+  y2          = "y2",
   id_col      = "ID",
+  time01      = 1,
+  time12      = 1,
   group_first = "baseline",
   interactive = FALSE
 )

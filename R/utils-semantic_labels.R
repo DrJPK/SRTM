@@ -9,7 +9,14 @@ srtm_trajectory_label_schemes <- function() {
     ),
     arrow_label = c("↟", "↑", "→", "↓", "↡"),
     sign_label  = c("++", "+", "—", "-", "--"),
-    text_label  = as.character(rank_label)
+    text_label  = as.character(rank_label),
+    report_description = c(
+      "a steeply increasing trajectory",
+      "a moderately increasing trajectory",
+      "a stable (flat) trajectory",
+      "a moderately decreasing trajectory",
+      "a steeply decreasing trajectory"
+    )
   )
 }
 

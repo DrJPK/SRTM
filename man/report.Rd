@@ -2,23 +2,59 @@
 % Please edit documentation in R/report.R
 \name{report}
 \alias{report}
-\title{Produce an APA-style narrative summary of SRTM analysis results}
+\title{Produce an APA-style summary of SRTM analysis results}
 \usage{
-report(results, alpha = 0.05)
+report(
+  results,
+  alpha = 0.05,
+  plot_palette = c("simple", "pastel", "modern", "colourblind", "greys"),
+  debug = FALSE
+)
 }
 \arguments{
-\item{results}{An object of class \code{srtm_analysis} as returned by
-\code{SRTMAnalyse()}.}
+\item{results}{An object of class \code{"srtm_analysis"} as returned by
+\code{\link[=SRTMAnalyse]{SRTMAnalyse()}}.}
 
 \item{alpha}{Numeric significance level for interpreting p-values
 (default \code{0.05}).}
+
+\item{plot_palette}{Character palette name passed to plotting helpers
+(e.g., \code{\link[=setPlotPalette]{setPlotPalette()}}, \code{\link[=plotSRTMPanel]{plotSRTMPanel()}},
+\code{\link[=plotSRTMPanelSummary]{plotSRTMPanelSummary()}}, \code{\link[=srtm_build_combined_cutpoint_plot]{srtm_build_combined_cutpoint_plot()}}).
+One of \code{"simple"}, \code{"pastel"}, \code{"colourblind"}, or
+\code{"greys"}. If \code{results$settings$plot_palette} is present,
+that value is used in preference.}
+
+\item{debug}{Logical; if \code{TRUE}, emits verbose diagnostic messages
+(via \code{\link[rlang:abort]{rlang::inform()}}) and does not suppress errors when building
+figures. Intended mainly for development and debugging.}
 }
 \value{
-A list with:
-\item{text}{A character vector of sentences suitable for a Results section.}
+A list with components:
+\describe{
+\item{text}{Character vector of sentences suitable for a Results
+section.}
 \item{table}{A tibble summarising group sizes, mean baseline scores,
-standard deviations, and mean slopes for each baseline × trajectory group.}
+standard deviations, and mean slopes for each baseline × trajectory
+type.}
+\item{figures}{A named list of ggplot/patchwork objects:
+\code{fig1_cutpoints}, \code{fig2_trajectories},
+\code{fig3_summary}, and \code{per_group} (itself a named list of
+group-specific patchwork figures). Any element may be \code{NULL}
+if figure construction fails.}
+\item{figure_order}{A character vector giving the intended high-level
+order in which figures should be printed, e.g.
+\code{c("fig1_cutpoints", "fig2_trajectories",
+            "fig3_summary", "per_group")}.}
+}
 }
 \description{
-Produce an APA-style narrative summary of SRTM analysis results
+Given an object returned by \code{\link[=SRTMAnalyse]{SRTMAnalyse()}}, \code{report()} constructs:
+\itemize{
+\item a set of APA-style sentences suitable for a Results section,
+\item a compact table of baseline × trajectory descriptors, and
+\item a collection of ggplot/patchwork figures that visualise
+cut-points, trajectories, and distributional summaries,
+including optional per-group panels.
+}
 }

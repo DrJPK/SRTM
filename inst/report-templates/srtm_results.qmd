@@ -1,0 +1,162 @@
+---
+title: "Self-Referenced Trajectory Modelling (SRTM) Results"
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    keep-tex: true
+  docx:
+    toc: true
+    number-sections: true
+params:
+  results_rds: null
+  fig_width: !expr 7
+  fig_height: !expr 4.5
+  dpi: 300
+  plot_palette: "simple"
+  alpha: 0.05
+  pdf_paginate: false
+  debug: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
+# pull parameters from Quarto
+results_rds   <- params$results_rds
+fig_width     <- params$fig_width
+fig_height    <- params$fig_height
+dpi           <- params$dpi
+plot_palette  <- params$plot_palette
+alpha         <- params$alpha
+pdf_paginate  <- params$pdf_paginate
+debug         <- params$debug
+
+if (is.null(results_rds) || !file.exists(results_rds)) {
+  stop("Parameter 'results_rds' is NULL or file does not exist. ",
+       "Please call generateSRTMResultsReport() so that 'results_rds' is supplied.")
+}
+
+# global chunk options: figure size + dpi
+knitr::opts_chunk$set(
+  fig.width  = fig_width,
+  fig.height = fig_height,
+  dpi        = dpi
+)
+
+# load SRTM analysis and build report object
+results <- readRDS(results_rds)
+
+report_obj <- SRTM::report(
+  results       = results,
+  alpha         = alpha,
+  plot_palette  = plot_palette,
+  debug         = debug
+)
+
+txt   <- report_obj$text
+tbl   <- report_obj$table
+figs  <- report_obj$figures  %||% list()
+order <- report_obj$figure_order %||% names(figs)
+
+pg_list <- figs$per_group %||% list()
+```
+
+## Overview
+
+```{r}
+#| echo: false
+if (length(txt) >= 1 && !is.na(txt[1])) cat(txt[1], "\n\n")
+if (length(txt) >= 2 && !is.na(txt[2])) cat(txt[2], "\n\n")
+```
+
+## Cut-points and Grouping (Figure 1)
+
+```{r}
+#| echo: false
+if (!is.null(figs$fig1_cutpoints)) {
+  figs$fig1_cutpoints
+}
+
+if (length(txt) >= 3 && !is.na(txt[3])) {
+  cat("\n\n", txt[3], "\n\n")
+}
+```
+
+## Group Summary Table (Table 1)
+
+```{r}
+#| echo: false
+tbl
+cat("\n\n")
+
+if (length(txt) >= 4 && !is.na(txt[4])) {
+  cat(txt[4], "\n\n")
+}
+```
+
+## Trajectory Panels (Figure 2)
+
+```{r}
+#| echo: false
+if (!is.null(figs$fig2_trajectories)) {
+  figs$fig2_trajectories
+}
+
+if (length(txt) >= 5 && !is.na(txt[5])) {
+  cat("\n\n", txt[5], "\n\n")
+}
+```
+
+## Distribution Summary Panels (Figure 3)
+
+```{r}
+#| echo: false
+if (!is.null(figs$fig3_summary)) {
+  figs$fig3_summary
+}
+
+if (length(txt) >= 6 && !is.na(txt[6])) {
+  cat("\n\n", txt[6], "\n\n")
+}
+if (length(txt) >= 7 && !is.na(txt[7])) {
+  cat("\n\n", txt[7], "\n\n")
+}
+```
+
+```{r}
+#| label: paginate-before-groups
+#| echo: false
+if (isTRUE(params$pdf_paginate) && knitr::is_latex_output()) {
+  cat("\\newpage\n")
+}
+```
+
+## Group-by-group Details
+
+```{r}
+#| echo: false
+if (length(pg_list) == 0L) {
+  cat("No group-specific figures were generated.\n")
+} else {
+  for (pg_name in names(pg_list)) {
+    pg <- pg_list[[pg_name]]
+
+    cat("\n\n---\n\n")
+    cat("### ", pg$heading, "\n\n")
+
+    if (!is.null(pg$text) && length(pg$text) > 0L) {
+      cat(paste(pg$text, collapse = "\n\n"), "\n\n")
+    }
+
+    if (!is.null(pg$figure)) {
+      print(pg$figure)
+    }
+
+    cat("\n\n")
+  }
+}
+```
