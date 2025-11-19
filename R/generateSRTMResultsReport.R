@@ -18,6 +18,9 @@
 #'   supporting files).
 #' @param format Output format. One of \code{"pdf"}, \code{"docx"},
 #'   \code{"tex"}, or \code{"html"}.
+#' @param work_dir Optional directory to use as the Quarto working/output dir.
+#'   Defaults to a temporary directory; on shared servers you may prefer a
+#'   persistent folder under your home directory.
 #' @param paper_size Page size for PDF/Word outputs. One of
 #'   \code{"A4"}, \code{"A4-landscape"}, \code{"A5"}, or
 #'   \code{"letter"}. Ignored for HTML except insofar as it informs
@@ -81,278 +84,147 @@
 #' @export
 generateSRTMResultsReport <- function(results,
                                       filename,
-                                      format      = c("pdf", "docx", "tex", "html"),
-                                      paper_size  = c("A4", "A4-landscape", "A5", "letter"),
-                                      dpi         = 300,
-                                      margin      = "1.5cm",
+                                      format       = c("pdf", "docx", "tex", "html"),
+                                      plot_palette = c("simple","pastel","modern","colourblind","greys"),
+                                      paper_size   = c("A4","A4-landscape","A5","letter"),
+                                      dpi          = 300,
+                                      margin       = "1.5cm",
                                       pdf_paginate = TRUE,
-                                      plot_palette = c("simple", "pastel", "modern", "colourblind", "greys"),
-                                      debug       = FALSE) {
+                                      work_dir     = NULL,
+                                      debug        = FALSE) {
 
-  # ---- basic checks --------------------------------------------------------
+  format     <- rlang::arg_match(format)
+  plot_palette <- rlang::arg_match(plot_palette)
+  paper_size <- rlang::arg_match(paper_size)
+
   if (!inherits(results, "srtm_analysis")) {
-    rlang::abort(
-      "`results` must be an object of class 'srtm_analysis' (output of SRTMAnalyse()).",
-      class = "srtm_generate_bad_results"
-    )
+    rlang::abort("`results` must be an object of class 'srtm_analysis'.",
+                 class = "srtm_generate_bad_results")
   }
 
   if (!requireNamespace("quarto", quietly = TRUE)) {
     rlang::abort(
-      "The 'quarto' package is required to render reports. Please install Quarto and the 'quarto' R package.",
+      "The 'quarto' package is required. Install it with install.packages('quarto') and ensure Quarto itself is installed.",
       class = "srtm_generate_no_quarto"
     )
   }
 
-  format     <- rlang::arg_match(format)
-  paper_size <- rlang::arg_match(paper_size)
-  plot_palette <- rlang::arg_match(plot_palette)
+  # Locate template in installed package
+  template_dir  <- system.file("report-templates", package = "SRTM")
+  template_path <- file.path(template_dir, "srtm_results.qmd")
 
-  if (!is.numeric(dpi) || length(dpi) != 1L || !is.finite(dpi) || dpi <= 0) {
-    rlang::abort("`dpi` must be a single positive numeric value.", class = "srtm_generate_bad_dpi")
-  }
-
-  if (!is.logical(pdf_paginate) || length(pdf_paginate) != 1L || is.na(pdf_paginate)) {
-    rlang::abort("`pdf_paginate` must be TRUE or FALSE.", class = "srtm_generate_bad_paginate")
-  }
-
-  if (!is.logical(debug) || length(debug) != 1L || is.na(debug)) {
-    rlang::abort("`debug` must be TRUE or FALSE.", class = "srtm_generate_bad_debug")
-  }
-
-  # ---- helper: parse margin to inches --------------------------------------
-  margin_to_inches <- function(x) {
-    if (is.numeric(x) && length(x) == 1L && is.finite(x)) {
-      # interpret bare numerics as centimetres
-      return(as.numeric(x) / 2.54)
-    }
-
-    if (!is.character(x) || length(x) != 1L) {
-      rlang::abort("`margin` must be a single numeric or a length-1 character (e.g. '1.5cm').",
-                   class = "srtm_generate_bad_margin")
-    }
-
-    m <- trimws(x)
-    m_re <- "^\\s*([0-9]*\\.?[0-9]+)\\s*(cm|mm|in)?\\s*$"
-    if (!grepl(m_re, m)) {
-      rlang::abort(
-        glue::glue("Could not parse `margin` = '{m}'. Use e.g. '1.5cm', '20mm', or '0.7in'."),
-        class = "srtm_generate_bad_margin"
-      )
-    }
-    parts <- sub(m_re, "\\1|\\2", m)
-    num   <- as.numeric(sub("\\|.*$", "", parts))
-    unit  <- sub("^.*\\|", "", parts)
-    if (!nzchar(unit)) unit <- "cm"
-
-    if (unit == "cm") {
-      num / 2.54
-    } else if (unit == "mm") {
-      num / 25.4
-    } else if (unit == "in") {
-      num
-    } else {
-      rlang::abort(
-        glue::glue("Unknown margin unit '{unit}'. Use 'cm', 'mm', or 'in'."),
-        class = "srtm_generate_bad_margin_unit"
-      )
-    }
-  }
-
-  # ---- compute figure size -------------------------------------------------
-  margin_in <- margin_to_inches(margin)
-
-  page_width_in <- switch(
-    paper_size,
-    "A4"           = 21 / 2.54,
-    "A4-landscape" = 29.7 / 2.54,
-    "A5"           = 14.8 / 2.54,
-    "letter"       = 8.5,
-    8.27  # default-ish
-  )
-
-  if (format %in% c("pdf", "docx", "tex")) {
-    usable_width <- max(page_width_in - 2 * margin_in, 1)  # avoid degenerate
-    fig_width  <- 0.95 * usable_width
-    fig_height <- fig_width * 0.6  # moderate aspect ratio
-  } else {
-    # HTML: choose something that looks good on 1366×768
-    fig_width  <- 7.5
-    fig_height <- 4.5
-  }
-
-  if (debug) {
-    rlang::inform(
-      glue::glue(
-        "generateSRTMResultsReport(): format = '{format}', paper_size = '{paper_size}', ",
-        "fig_width = {round(fig_width, 2)} in, fig_height = {round(fig_height, 2)} in, dpi = {dpi}."
-      ),
-      class = "srtm_generate_debug"
-    )
-  }
-
-  # ---- locate template and set up temp dir ---------------------------------
-  template_path <- system.file("srtm_results.qmd", package = "SRTM")
-  if (!nzchar(template_path) || !file.exists(template_path)) {
+  if (!nzchar(template_dir) || !file.exists(template_path)) {
     rlang::abort(
-      "Could not find 'srtm_results.qmd' in the SRTM package. Check that the template is installed.",
+      paste0(
+        "Could not find 'srtm_results.qmd' in the SRTM package.\n",
+        "Checked path: ", template_path
+      ),
       class = "srtm_generate_no_template"
     )
   }
 
-  work_dir <- tempfile("srtm_report_")
-  dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
+  # Work directory: tempdir() by default, but allow override (e.g. ~/srtm_reports)
+  if (is.null(work_dir)) {
+    work_dir <- file.path(tempdir(), paste0("srtm_report_", as.integer(Sys.time())))
+  }
+  work_dir <- normalizePath(work_dir, mustWork = FALSE)
 
-  # Save results object as RDS for the QMD to load
-  results_rds <- file.path(work_dir, "srtm_results.rds")
-  saveRDS(results, results_rds)
-
-  # Decide base name + final filename
-  if (missing(filename) || is.null(filename) || !nzchar(filename)) {
-    base <- glue::glue("SRTM-results-{format}-{Sys.Date()}")
-    filename <- paste0(base, switch(format,
-                                    pdf  = ".pdf",
-                                    docx = ".docx",
-                                    tex  = ".tex",
-                                    html = ".zip"))
+  if (!dir.exists(work_dir)) {
+    dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
   }
 
-  # normalise user-supplied path
-  filename <- normalizePath(filename, winslash = "/", mustWork = FALSE)
-  out_dir  <- dirname(filename)
-  if (!dir.exists(out_dir)) {
-    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  if (!file.access(work_dir, 2) == 0) {
+    rlang::abort(
+      paste0("Working directory '", work_dir, "' is not writable."),
+      class = "srtm_generate_unwritable_dir"
+    )
   }
 
-  base_name <- tools::file_path_sans_ext(basename(filename))
-
-  # ---- prepare Quarto render args ------------------------------------------
-  # Quarto format string
-  q_format <- switch(
-    format,
-    pdf  = "pdf",
-    docx = "docx",
-    tex  = "pdf",   # rely on keep-tex in template
-    html = "html"
-  )
-
-  # We always render into the temp working directory
-  out_file_stub <- paste0(base_name, ".", if (format == "html") "html" else q_format)
-  render_args <- list(
-    input        = template_path,
-    output_file  = out_file_stub,
-    output_format = q_format,
-    execute_params = list(
-      results_rds   = results_rds,
-      fig_width     = fig_width,
-      fig_height    = fig_height,
-      dpi           = dpi,
-      plot_palette  = plot_palette,
-      pdf_paginate  = pdf_paginate
-    ),
-    execute_dir  = work_dir,
-    quiet        = !debug
-  )
-
-  # ---- render via Quarto ---------------------------------------------------
   if (debug) {
     rlang::inform(
-      glue::glue(
-        "generateSRTMResultsReport(): calling quarto_render() with format = '{q_format}'."
+      paste0(
+        "generateSRTMResultsReport(): using work_dir = '", work_dir,
+        "', template_path = '", template_path, "'."
       ),
       class = "srtm_generate_debug"
     )
   }
 
-  do.call(quarto::quarto_render, render_args)
+  # Build report object once
+  report_obj <- report(
+    results       = results,
+    alpha         = results$settings$alpha %||% 0.05,
+    plot_palette  = plot_palette,
+    debug         = debug
+  )
 
-  # ---- collect output depending on format ----------------------------------
-  result_path <- NULL
+  # Decide extension
+  ext <- switch(format,
+                pdf  = "pdf",
+                docx = "docx",
+                tex  = "tex",
+                html = "html")
 
-  if (format %in% c("pdf", "docx")) {
-    rendered <- file.path(work_dir, out_file_stub)
-    if (!file.exists(rendered)) {
+  output_file <- paste0(filename, ".", ext)
+  expected_path <- file.path(work_dir, output_file)
+
+  # Quarto params passed through
+  q_params <- list(
+    report_obj = report_obj,
+    alpha      = report_obj$settings$alpha %||% 0.05,
+    palette    = plot_palette,
+    debug      = debug,
+    paper_size = paper_size,
+    dpi        = dpi,
+    margin     = margin,
+    paginate   = pdf_paginate
+  )
+
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+  setwd(work_dir)
+
+  # Actually call Quarto
+  q_result <- tryCatch(
+    quarto::quarto_render(
+      input       = template_path,
+      output_format = format,
+      output_file = output_file,
+      #output_dir  = work_dir,
+      execute_params = q_params,
+      quiet       = !debug
+    ),
+    error = function(e) {
       rlang::abort(
-        glue::glue("Expected output file '{rendered}' was not created by Quarto."),
-        class = "srtm_generate_missing_output"
+        paste0(
+          "Quarto rendering failed: ", conditionMessage(e),
+          if (format == "pdf") "\nCheck that a LaTeX distribution is installed (e.g., tinytex::install_tinytex())." else ""
+        ),
+        class = "srtm_generate_quarto_error"
       )
     }
-    result_path <- filename
-    file.copy(rendered, result_path, overwrite = TRUE)
+  )
 
-  } else if (format == "tex") {
-    # Look for corresponding .tex (assumes keep-tex: true in template)
-    tex_candidate <- file.path(work_dir, paste0(base_name, ".tex"))
-    if (file.exists(tex_candidate)) {
-      tex_src <- tex_candidate
-    } else {
-      tex_files <- list.files(work_dir, pattern = "\\.tex$", full.names = TRUE, recursive = TRUE)
-      if (length(tex_files) == 0L) {
-        rlang::warn(
-          "No .tex file was found; returning the rendered PDF instead.",
-          class = "srtm_generate_no_tex"
-        )
-        tex_files <- file.path(work_dir, out_file_stub)  # PDF fallback
-      }
-      tex_src <- tex_files[[1L]]
-    }
-
-    dest <- filename
-    if (!grepl("\\.tex$", dest, ignore.case = TRUE)) {
-      dest <- paste0(tools::file_path_sans_ext(dest), ".tex")
-    }
-    result_path <- dest
-    file.copy(tex_src, dest, overwrite = TRUE)
-
-  } else if (format == "html") {
-    # HTML + support files zipped
-    html_file <- file.path(work_dir, out_file_stub)
-    if (!file.exists(html_file)) {
-      rlang::abort(
-        glue::glue("Expected HTML file '{html_file}' was not created by Quarto."),
-        class = "srtm_generate_missing_html"
-      )
-    }
-
-    # Quarto usually creates a *_files directory; include it if present
-    html_stub <- tools::file_path_sans_ext(basename(html_file))
-    support_dir <- file.path(work_dir, paste0(html_stub, "_files"))
-
-    files_to_zip <- basename(html_file)
-    if (dir.exists(support_dir)) {
-      # include all files inside support dir
-      support_rel <- file.path(basename(support_dir),
-                               list.files(support_dir, recursive = TRUE))
-      files_to_zip <- c(files_to_zip, support_rel)
-    }
-
-    # create zip inside work_dir then copy to final location
-    zip_name <- file.path(work_dir, paste0(base_name, "_html_bundle.zip"))
-
-    old_wd <- getwd()
-    on.exit(setwd(old_wd), add = TRUE)
-    setwd(work_dir)
-
-    utils::zip(zipfile = basename(zip_name), files = files_to_zip)
-
-    # decide final filename (ensure .zip)
-    dest <- filename
-    if (!grepl("\\.zip$", dest, ignore.case = TRUE)) {
-      dest <- paste0(tools::file_path_sans_ext(dest), ".zip")
-    }
-    file.copy(zip_name, dest, overwrite = TRUE)
-    result_path <- dest
-  }
-
-  if (!debug) {
-    # best-effort clean-up of temp dir (safe if fails)
-    try(unlink(work_dir, recursive = TRUE, force = TRUE), silent = TRUE)
-  } else {
+  if (debug) {
     rlang::inform(
-      glue::glue("Debug mode: intermediate files left in '{work_dir}'."),
+      paste0("quarto_render() returned: ", capture.output(str(q_result))),
       class = "srtm_generate_debug"
     )
   }
 
-  invisible(normalizePath(result_path, winslash = "/"))
+  expected_path <- file.path(work_dir, output_file)
+
+  if (!file.exists(expected_path)) {
+    rlang::abort(
+      paste0(
+        "Expected output file '", expected_path,
+        "' was not created by Quarto.\n",
+        "On RStudio Server, this is often due to PDF engine / LaTeX issues or a mis-specified output_dir.\n",
+        "Try: quarto::quarto_check(), and tinytex::install_tinytex() if you're missing LaTeX."
+      ),
+      class = "srtm_generate_no_output"
+    )
+  }
+
+  invisible(expected_path)
 }

@@ -8,11 +8,12 @@ generateSRTMResultsReport(
   results,
   filename,
   format = c("pdf", "docx", "tex", "html"),
+  plot_palette = c("simple", "pastel", "modern", "colourblind", "greys"),
   paper_size = c("A4", "A4-landscape", "A5", "letter"),
   dpi = 300,
   margin = "1.5cm",
   pdf_paginate = TRUE,
-  plot_palette = c("simple", "pastel", "modern", "colourblind", "greys"),
+  work_dir = NULL,
   debug = FALSE
 )
 }
@@ -28,6 +29,11 @@ supporting files).}
 
 \item{format}{Output format. One of \code{"pdf"}, \code{"docx"},
 \code{"tex"}, or \code{"html"}.}
+
+\item{plot_palette}{Character palette name passed through to
+plotting helpers (e.g. \code{\link[=setPlotPalette]{setPlotPalette()}}, \code{\link[=plotSRTMPanel]{plotSRTMPanel()}},
+\code{\link[=plotSRTMPanelSummary]{plotSRTMPanelSummary()}}). One of \code{"simple"}, \code{"pastel"},
+\code{"modern"}, \code{"colourblind"}, or \code{"greys"}.}
 
 \item{paper_size}{Page size for PDF/Word outputs. One of
 \code{"A4"}, \code{"A4-landscape"}, \code{"A5"}, or
@@ -50,10 +56,9 @@ the Quarto template so that page breaks can be inserted between
 per-group sections (actual page-break behaviour is controlled
 inside the QMD).}
 
-\item{plot_palette}{Character palette name passed through to
-plotting helpers (e.g. \code{\link[=setPlotPalette]{setPlotPalette()}}, \code{\link[=plotSRTMPanel]{plotSRTMPanel()}},
-\code{\link[=plotSRTMPanelSummary]{plotSRTMPanelSummary()}}). One of \code{"simple"}, \code{"pastel"},
-\code{"modern"}, \code{"colourblind"}, or \code{"greys"}.}
+\item{work_dir}{Optional directory to use as the Quarto working/output dir.
+Defaults to a temporary directory; on shared servers you may prefer a
+persistent folder under your home directory.}
 
 \item{debug}{Logical; if \code{TRUE}, emits additional diagnostic
 messages and leaves intermediate files in the temporary working
