@@ -9,7 +9,7 @@ assignGroups(
   group_params = NULL,
   interactive = TRUE,
   method = c("density", "kmeans"),
-  label_scheme = c("letters", "signs", "arrows")
+  label_scheme = c("letters", "signs", "arrows", "text")
 )
 }
 \arguments{

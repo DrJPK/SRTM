@@ -136,7 +136,7 @@ assignGroups <- function(data,
                          group_params = NULL,
                          interactive  = TRUE,
                          method       = c("density", "kmeans"),
-                         label_scheme = c("letters", "signs", "arrows")) {
+                         label_scheme = c("letters", "signs", "arrows","text")) {
 
   label_scheme <- rlang::arg_match(label_scheme)
 
@@ -310,26 +310,81 @@ assignGroups <- function(data,
 
   breaks <- c(-Inf, cutpoints, Inf)
 
+  # initial groups from cutpoints; labels are just temporary level names
   groups <- cut(
     x,
     breaks          = breaks,
-    labels          = LETTERS[seq_len(nGroups)],
-    include.lowest  = TRUE,
+    labels          = seq_len(nGroups),
+    include_lowest  = TRUE,
     right           = TRUE,
     ordered_result  = TRUE
   )
 
-  # Make sure group A corresponds to the rightmost group
+  # Compute mean per temporary group to rank high → low
   group_means <- tapply(x, groups, mean, na.rm = TRUE)
   ord         <- order(group_means, decreasing = TRUE)
   old_levels  <- levels(groups)
-  new_levels  <- old_levels[ord]
-  new_labels  <- LETTERS[seq_len(length(new_levels))]
+
+  # --- Decide final labels based on label_scheme ---------------------------
+
+  if (identical(label_scheme, "letters")) {
+    # Baseline-style groups: A, B, C, ...
+    final_labels <- LETTERS[seq_len(nGroups)]
+
+  } else {
+    # Trajectory-style groups: arrows, signs, or text
+    scheme_col <- switch(
+      label_scheme,
+      arrows = "arrow_label",
+      signs  = "sign_label",
+      text   = "text_label",
+      rlang::abort(
+        glue::glue("Unsupported label_scheme: {label_scheme}"),
+        class = "srtm_assignGroups_bad_label_scheme"
+      )
+    )
+
+    base_labels <- getLabelScheme(scheme_col)
+
+    if (length(base_labels) == 0L) {
+      rlang::abort(
+        glue::glue("Label scheme '{scheme_col}' returned no labels."),
+        class = "srtm_assignGroups_empty_label_scheme"
+      )
+    }
+
+    # Assign conceptual labels in order of decreasing mean:
+    # highest mean → base_labels[1], next → base_labels[2], etc.
+    # If we run out of distinct labels, reuse them and append suffixes
+    # (_a, _b, ...) to keep them unique.
+    n_base      <- length(base_labels)
+    final_labels <- character(nGroups)
+    use_counts   <- integer(n_base)
+
+    for (i in seq_len(nGroups)) {
+      j <- ((i - 1L) %% n_base) + 1L
+      base <- base_labels[j]
+      use_counts[j] <- use_counts[j] + 1L
+
+      if (use_counts[j] == 1L) {
+        # first time this conceptual label appears → bare label
+        final_labels[i] <- base
+      } else {
+        # second, third, ... occurrences → add suffix _a, _b, ...
+        suffix_idx   <- use_counts[j] - 1L
+        suffix_letter <- letters[suffix_idx]  # a, b, c, ...
+        final_labels[i] <- paste0(base, "_", suffix_letter)
+      }
+    }
+  }
+
+  # Map old cut() levels (ordered by decreasing mean) to final_labels
+  new_levels <- old_levels[ord]
 
   groups <- factor(
     groups,
     levels  = new_levels,
-    labels  = new_labels,
+    labels  = final_labels,
     ordered = TRUE
   )
 

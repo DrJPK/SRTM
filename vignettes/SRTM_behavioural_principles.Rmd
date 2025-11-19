@@ -1,0 +1,338 @@
+---
+title: "Behavioural Principles Behind SRTM"
+author: "SRTM package"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Behavioural Principles Behind SRTM}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Introduction
+
+The **SRTM** (Self-Referenced Trajectory Modelling) framework was built to
+answer a practical question:
+
+> *How can we evaluate the impact of educational influences in real classrooms,
+> without relying on idealised randomised controlled trials (RCTs) that are
+> rarely feasible in practice?*
+
+Instead of comparing a treatment group to a control group, SRTM treats
+**each student as their own control**, and uses their personal trajectory over
+time as the reference point for evaluating change.
+
+This vignette focuses on the **behavioural principles** underpinning SRTM and
+how they translate into statistical and modelling decisions in the package.
+
+We assume you have already seen the basic workflow in the
+`Getting Started with SRTM` vignette.
+
+# 1. Why not RCTs in classrooms?
+
+RCTs are powerful in tightly controlled environments (e.g., some areas of
+medicine), but classroom contexts pose several challenges:
+
+- **Random assignment** is often infeasible or unethical:
+  you cannot easily randomise students to "good teaching" vs "no teaching".
+- There is rarely a clear **standard treatment** to act as a control
+  condition.
+- The **sample sizes** and number of confounding variables
+  (between-student, between-classroom, between-school) make it difficult
+  to obtain clean contrasts.
+- Educational systems are **dynamic and context-sensitive**: rigid control
+  structures can erode authenticity and teacher autonomy.
+
+SRTM is a pragmatic response to these realities. Instead of forcing classroom
+data into an RCT mould, it builds on a set of behavioural principles that
+respect complexity while still permitting systematic analysis.
+
+# 2. Kennedy's Behavioural Principles
+
+SRTM is guided by a set of behavioural principles which, if not found
+elsewhere in the literature, you may treat as **Kennedy's Behavioural
+Principles**.
+
+They are purposely informal: they are not offered as universal laws of human
+behaviour, but as useful working assumptions for educational evaluation over
+short-to-medium time scales.
+
+## 2.1 0th Law – Behavioural Complexity
+
+> *Any observed behaviour is the result of a complex, dynamic network of
+> attitudes, values, beliefs, and contextual factors.*
+
+Key points:
+
+- There is a large, effectively uncountable number of "weights" connecting
+  internal states (attitudes, values, beliefs) to behaviour.
+- These weights are **not constant**:
+  they depend on the current state of the person, the context, and time.
+- They are **recursive and self-updating**: internal states influence how new
+  information is perceived, which in turn updates those same states.
+
+From a modelling point of view:
+
+- attempting to estimate these weights directly is not tractable;
+- SRTM therefore works with **observable measures** (e.g., attitude scores,
+  engagement ratings, achievement) and their **trajectories over time**.
+
+The 0th Law encourages us to be modest:
+we accept that our variables are **proxies** for a much richer process.
+
+## 2.2 1st Law – Behavioural Inertia
+
+> *In the absence of a net external influence, the rate at which attitudes,
+> values and beliefs change is essentially constant over short periods in
+> relatively stable contexts.*
+
+"Essentially" is doing a lot of work here:
+
+- internally, a great deal may be happening;
+- but at the level of our measurement tools, the *trend* in a given variable
+  (e.g., an attitude score) can be approximated as a straight line over a
+  short enough window.
+
+In SRTM this motivates the idea of a **personal trajectory**:
+
+- use two time points, `y0` (historical) and `y1` (baseline), to estimate each
+  student's slope of change up to the onset of an influence;
+- assume that, if nothing new happened, this slope would have continued in a
+  similar way to `y2`.
+
+This is what allows us to model the **counterfactual** – what would likely
+have happened for *this student* if the new influence had not occurred.
+
+## 2.3 2nd Law – Behavioural Momentum
+
+> *When a net external influence is present, the rate of change in behaviour
+> is approximately proportional to the perceived strength of the influence and
+> inversely proportional to behavioural inertia.*
+
+Implications:
+
+- Students with **well-established** attitudes and values (high inertia) are
+  harder to shift.
+- Students whose internal systems are **less settled** change more readily.
+- What matters is **perceived** influence:
+  the messages received, not just the messages sent.
+
+SRTM uses this principle to interpret systematic deviations from the
+counterfactual:
+
+- if a group of students is consistently **above** its expected trajectory,
+  this is consistent with the presence of a meaningful positive influence;
+- if a group is consistently **below** expectation, this suggests that
+  something is inhibiting progress.
+
+The quantitative tools (regression, grouping, t-tests) are conventional; the
+interpretation is framed by behavioural momentum.
+
+## 2.4 3rd Principle – Behavioural Impulse
+
+> *Influences rarely act as one-off events; instead, they operate over time.
+> The overall effect depends on both perceived strength and duration.*
+
+Conceptually this is analogous to impulse in physics:
+
+\[
+\text{Impulse} \approx \text{Force} \times \text{Time}.
+\]
+
+In educational contexts:
+
+- A pedagogical change applied for **too short** a duration may be
+  indistinguishable from noise (especially if the measurement tool is coarse).
+- Over **very long** durations, other influences (school changes, life events,
+  curriculum shifts) accumulate, making attribution more ambiguous.
+
+SRTM does not solve this trade-off, but it makes it explicit:
+
+- the user must choose time gaps (or dates) for `y0`, `y1`, `y2`;
+- the method is most defensible when these are short enough that the 1st Law
+  (behavioural inertia) is plausible, but long enough for meaningful change
+  to be observable.
+
+# 3. From principles to models
+
+How do these principles show up in the SRTM workflow?
+
+## 3.1 Personal trajectories
+
+Given measurements at `y0`, `y1`, `y2` and time gaps `dt01`, `dt12`:
+
+```r
+library(SRTM)
+data("SRTM_synth_data")
+
+x <- SRTM_synth_data
+head(x)
+```
+
+SRTM:
+
+1. Uses `y0` and `y1` (and `dt01`) to compute a **slope** for each student:
+
+   ```r
+   # behind the scenes in SRTMAnalyse():
+   # m01 <- calculateTrajectories(data = x, y0 = "y0", y1 = "y1", time_period = dt01)
+   ```
+
+2. Treats this slope as a summary of the student's **behavioural inertia**
+   in that measure.
+
+This step is where the 1st Law (behavioural inertia) is operationalised:
+a linear trend is used as a local approximation to a more complex underlying
+process.
+
+## 3.2 Grouping students
+
+SRTM then groups students in two complementary ways:
+
+- by **trajectory** (slope between `y0` and `y1`), and  
+- by **baseline level** (measurement at `y1`).
+
+The grouping is typically done via `findGroups()` and `assignGroups()`:
+
+```r
+# Conceptual only; in practice SRTMAnalyse() orchestrates these calls
+traj_params <- findGroups(x, time_var = "m01", interactive = FALSE)
+traj_group  <- assignGroups(x, group_params = traj_params)
+
+base_params <- findGroups(x, time_var = "y1", interactive = FALSE)
+base_group  <- assignGroups(x, group_params = base_params)
+```
+
+This yields groups like:
+
+- "low, stable"  
+- "low, improving"  
+- "high, declining"  
+- etc.,
+
+depending on the data and the choices made in `findGroups()`.
+
+These groups represent **types of student trajectories**, not fixed
+psychological categories.
+
+## 3.3 Expected vs observed post scores
+
+For each baseline × trajectory group, SRTM then fits simple linear models
+to predict what would likely happen at `y2`:
+
+```r
+# Conceptual only:
+# df <- predictPostResponse(data = x, y0 = "y0", y1 = "y1", y2 = "y2",
+#                           base_group = "baseGroup", traj_group = "trajGroup",
+#                           time01 = dt01, time12 = dt12)
+```
+
+The predicted value is stored as `exp_y2`.
+
+This embodies the question:
+
+> *If nothing new had happened, and the world behaved as it did between
+> y0 and y1, where would this student (and group) likely be at y2?*
+
+## 3.4 Comparing with reality
+
+Finally, SRTM compares `y2` (observed) with `exp_y2` (expected):
+
+```r
+# part of SRTMAnalyse():
+# res <- compareOutcomes(data = df, obs = "y2", exp = "exp_y2",
+#                        baseGroups = "baseGroup", trajGroups = "trajGroup")
+```
+
+At group level, we look at:
+
+- the mean difference (`mean(y2 - exp_y2)`),
+- its standard error and t-statistic,
+- and the corresponding p-value.
+
+From the standpoint of the behavioural principles:
+
+- a **large, consistent positive difference** suggests a net positive
+  influence strong enough to overcome behavioural inertia;
+- a **large negative difference** suggests that something has disrupted or
+  reversed the prior trend;
+- small differences are consistent with continuation of the pre-existing
+  trajectory.
+
+SRTM does not insist that these differences be interpreted causally in a
+strong sense; rather, it presents them as structured evidence for
+professional judgement.
+
+# 4. Implications for practice
+
+A key design philosophy in SRTM is:
+
+> *Support teachers to interpret change in their own context, rather
+> than prescribing a single "best practice".*
+
+Some practical implications:
+
+- Different **groups of students** may respond differently to the same
+  influence; SRTM is built to highlight this heterogeneity.
+- Negative or null results for some groups are not necessarily failures;
+  they can be prompts for local sense-making (e.g., "this worked well
+  for already-engaged students, but not for those starting low").
+- The method is **transparent**:
+  there is no black-box model; the core pieces are linear trends,
+  clustering, and t-tests, framed by behavioural principles.
+
+# 5. A minimal worked example
+
+For completeness, here is a compact example that you can run:
+
+```{r}
+library(SRTM)
+
+data("SRTM_synth_data")
+x <- SRTM_synth_data
+
+# Run analysis non-interactively for the vignette
+res <- SRTMAnalyse(
+  data        = x,
+  y0          = y0,
+  y1          = y1,
+  y2          = y2,
+  id_col      = "ID",
+  group_first = "baseline",
+  interactive = FALSE
+)
+
+# Group-level comparisons
+res$Comparisons
+```
+
+You can then use `summary(res)` and `plot(res)` in an interactive R session
+to explore the same results more visually.
+
+# 6. Conclusion
+
+SRTM is not a replacement for all forms of evaluation, nor is it a magic
+detector of "what works". Its aim is more modest and, we hope, more useful:
+
+- to provide a coherent way to think about change over time in real classrooms,
+- to treat each student as their own reference point,
+- to visualise and test how different *kinds* of students respond, and
+- to support professional interpretation rather than override it.
+
+For technical details on implementation, see the documentation for:
+
+- `SRTMAnalyse()`
+- `assignGroups()`
+- `compareOutcomes()`
+- `summariseGroupOutcomes()`
+- `SRTM_student_attitude_data`
+

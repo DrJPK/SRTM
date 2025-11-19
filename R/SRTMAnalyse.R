@@ -21,7 +21,7 @@
 #'   \item the augmented analysis data (with IDs, time variables, slopes,
 #'     groups, expected outcomes, etc.),
 #'   \item group-level comparisons of observed vs expected outcomes,
-#'   \item compact summaries for each baseline × trajectory group, and
+#'   \item compact summaries for each baseline × trajectory type, and
 #'   \item settings and grouping parameters used to construct the model.
 #' }
 #'
@@ -73,6 +73,25 @@
 #'   This allows users to emphasise either initial status (\emph{baseline
 #'   first}) or early change (\emph{slope first}) in the grouping structure.
 #'
+#' @param traj_label_scheme Character string specifying the labelling scheme
+#'   to use for \emph{trajectory} groups and for \code{trajType}. Must be one
+#'   of \code{"arrows"}, \code{"signs"}, or \code{"text"}:
+#'   \itemize{
+#'     \item \code{"arrows"}: uses arrow glyphs such as \code{"↟"}, \code{"↑"},
+#'       \code{"→"}, \code{"↓"}, \code{"↡"} (with suffixes like \code{"_a"}
+#'       when multiple distinct groups share the same conceptual rank).
+#'     \item \code{"signs"}: uses sign labels such as \code{"++"}, \code{"+"},
+#'       \code{"—"}, \code{"-"}, \code{"--"} (again with suffixes where
+#'       needed).
+#'     \item \code{"text"}: uses textual labels corresponding to the internal
+#'       trajectory ranks: \code{"steep_pos"}, \code{"shallow_pos"},
+#'       \code{"flat"}, \code{"shallow_neg"}, \code{"steep_neg"} (with
+#'       suffixes).
+#'   }
+#'   Baseline groups (\code{baseGroup}) are always labelled with letters
+#'   (\code{"A"}, \code{"B"}, …); the letter scheme is never used for
+#'   trajectory groups.
+#'
 #' @param interactive Logical. If \code{TRUE} (default), the function is
 #'   allowed to use interactive helpers:
 #'   \itemize{
@@ -90,13 +109,13 @@
 #'   with the following components:
 #'   \describe{
 #'     \item{Comparisons}{A tibble returned by \code{\link{compareOutcomes}()},
-#'       containing one row per baseline × trajectory group with t-tests of
-#'       observed vs expected outcomes at \code{y2}.}
+#'       containing one row per baseline × trajectory \emph{type} with t-tests
+#'       of observed vs expected outcomes at \code{y2}.}
 #'
 #'     \item{GroupSummary}{A tibble returned by
 #'       \code{\link{summariseGroupOutcomes}()}, providing descriptive
 #'       statistics (e.g., group sizes, means, expected values) for each
-#'       baseline × trajectory group.}
+#'       baseline × trajectory type.}
 #'
 #'     \item{data}{The original data augmented with additional columns used in
 #'       the SRMT analysis, including (but not limited to):
@@ -105,13 +124,13 @@
 #'         \item \code{dt01} and \code{dt12}: time intervals between
 #'           \code{y0}–\code{y1} and \code{y1}–\code{y2},
 #'         \item \code{t0}, \code{t1}, \code{t2}: time positions for each
-#'           occasion (either numeric, with \code{t1 = 0}, or Dates in "dates"
-#'           mode),
+#'           occasion,
 #'         \item \code{m01}: the slope between \code{y0} and \code{y1},
-#'         \item \code{baseGroup}: baseline group membership,
-#'         \item \code{trajGroup}: trajectory group membership,
-#'         \item \code{trajType}: a labelled trajectory type derived from
-#'           \code{m01} and \code{trajGroup},
+#'         \item \code{baseGroup}: baseline group membership (letters),
+#'         \item \code{trajGroup}: trajectory group membership (internal),
+#'         \item \code{trajType}: a human-readable trajectory type label
+#'           derived from \code{m01} and \code{trajGroup}, using
+#'           \code{traj_label_scheme},
 #'         \item \code{exp_y2}: the expected post score from group-specific
 #'           linear models.
 #'       }}
@@ -125,6 +144,8 @@
 #'         \item \code{time01}, \code{time12}: the numeric time intervals used,
 #'         \item \code{group_first}: the grouping order (\code{"baseline"} or
 #'           \code{"slope"}),
+#'         \item \code{traj_label_scheme}: the scheme used for trajectory
+#'           labels,
 #'         \item \code{time_mode}: \code{"duration"} or \code{"dates"}
 #'           depending on how timing was specified,
 #'         \item \code{time_unit}: a label for the time units (e.g. "days",
@@ -152,117 +173,6 @@
 #'       }}
 #'   }
 #'
-#'   The object can be inspected directly, or passed to plot/summary methods
-#'   (if provided) to generate visualisations and reports.
-#'
-#' @section Workflow:
-#'
-#' Internally, `SRTMAnalyse()` proceeds through the following stages:
-#' \enumerate{
-#'   \item \strong{Time setup}:
-#'     \itemize{
-#'       \item Resets the internal time state via
-#'         \code{\link{srtm_reset_time_state}()}.
-#'       \item Obtains \code{dt01} and \code{dt12} either from
-#'         \code{time01}/\code{time12} or interactively via
-#'         \code{\link{getTimePeriod}()}.
-#'       \item Constructs \code{t0}, \code{t1}, \code{t2} as either numeric
-#'         times (with \code{t1 = 0}, \code{t0 = -dt01}, \code{t2 = dt12}) or,
-#'         in dates mode, as the original Historical/Pre/Post dates.
-#'     }
-#'
-#'   \item \strong{Slope calculation}:
-#'     \itemize{
-#'       \item Computes \code{m01} (the slope between \code{y0} and
-#'         \code{y1}) using \code{\link{calculateTrajectories}()}.
-#'     }
-#'
-#'   \item \strong{Grouping}:
-#'     \itemize{
-#'       \item If \code{group_first = "baseline"}:
-#'         \enumerate{
-#'           \item Use \code{\link{findGroups}()} on \code{y1} for the whole
-#'             sample to define baseline groups.
-#'           \item Use \code{\link{assignGroups}()} to assign \code{baseGroup}
-#'             to each individual.
-#'           \item Within each \code{baseGroup}, use \code{findGroups} on
-#'             \code{m01} and \code{assignGroups} to create trajectory groups
-#'             (\code{trajGroup}), typically labelled using an arrow-based
-#'             scheme.
-#'         }
-#'       \item If \code{group_first = "slope"}:
-#'         \enumerate{
-#'           \item Use \code{findGroups} on \code{m01} for the whole sample to
-#'             define trajectory groups.
-#'           \item Use \code{assignGroups} to assign \code{trajGroup} to each
-#'             individual.
-#'           \item Within each \code{trajGroup}, use \code{findGroups} on
-#'             \code{y1} and \code{assignGroups} to create baseline groups
-#'             (\code{baseGroup}).
-#'         }
-#'     }
-#'
-#'   \item \strong{Trajectory labelling}:
-#'     \itemize{
-#'       \item Calls \code{\link{srtm_compute_trajType}()} to construct
-#'         \code{trajType}, a human-readable label for trajectory patterns
-#'         based on \code{m01}, \code{trajGroup}, and the time interval
-#'         \code{dt01}.
-#'     }
-#'
-#'   \item \strong{Outcome modelling and comparison}:
-#'     \itemize{
-#'       \item Fits group-specific linear models and computes expected post
-#'         values \code{exp_y2} via \code{\link{predictPostResponse}()}.
-#'       \item Runs \code{\link{compareOutcomes}()} to compare observed
-#'         \code{y2} with \code{exp_y2} within each baseline × trajectory
-#'         group using paired t-tests.
-#'       \item Summarises group outcomes with
-#'         \code{\link{summariseGroupOutcomes}()}.
-#'     }
-#' }
-#'
-#' @seealso
-#'   \code{\link{calculateTrajectories}()},
-#'   \code{\link{findGroups}()},
-#'   \code{\link{assignGroups}()},
-#'   \code{\link{getTimePeriod}()},
-#'   \code{\link{compareOutcomes}()},
-#'   \code{\link{summariseGroupOutcomes}()},
-#'   \code{\link{srtm_compute_trajType}()},
-#'   \code{\link{predictPostResponse}()}.
-#'
-#' @examples
-#' \dontrun{
-#' # Basic usage with a three-time-point dataset
-#' library(dplyr)
-#'
-#' # Assume `SRTM_student_attitude_data` has columns y0, y1, y2 and participantID
-#' data("SRTM_student_attitude_data")
-#'
-#' fit <- SRTMAnalyse(
-#'   data        = SRTM_student_attitude_data,
-#'   y0          = y0,
-#'   y1          = y1,
-#'   y2          = y2,
-#'   id_col      = "participantID",
-#'   group_first = "baseline",
-#'   interactive = TRUE
-#' )
-#'
-#' # Group-level comparisons of observed vs expected post scores
-#' fit$Comparisons
-#'
-#' # Group-level descriptive summaries
-#' fit$GroupSummary
-#'
-#' # Augmented analysis data with groups and expected outcomes
-#' dplyr::glimpse(fit$data)
-#'
-#' # Access analysis settings
-#' fit$settings
-#' }
-#'
 #' @export
 SRTMAnalyse <- function(data,
                         y0          = "y0",
@@ -272,6 +182,7 @@ SRTMAnalyse <- function(data,
                         time01      = NULL,
                         time12      = NULL,
                         group_first = c("slope", "baseline"),
+                        traj_label_scheme = c("arrows", "signs", "text"),
                         interactive = TRUE) {
 
   # reset time state for this analysis run
@@ -284,10 +195,13 @@ SRTMAnalyse <- function(data,
     )
   }
 
-  group_first <- rlang::arg_match(group_first)
+  group_first       <- rlang::arg_match(group_first)
+  traj_label_scheme <- rlang::arg_match(traj_label_scheme)
 
   rlang::inform(
-    glue::glue("SRTMAnalyse: grouping first by `{group_first}`."),
+    glue::glue(
+      "SRTMAnalyse: grouping first by `{group_first}`, traj_label_scheme = '{traj_label_scheme}'."
+    ),
     class = "srtm_analyse_progress"
   )
 
@@ -335,10 +249,10 @@ SRTMAnalyse <- function(data,
 
   # store all findGroups() outputs for later plotting
   group_params_store <- list(
-    baseline_overall = NULL,  # findGroups on y1 for whole sample
-    traj_overall     = NULL,  # findGroups on m01 for whole sample
-    traj_by_base     = list(),# findGroups on m01 within each baseGroup
-    baseline_by_traj = list() # findGroups on y1 within each trajGroup
+    baseline_overall = NULL,
+    traj_overall     = NULL,
+    traj_by_base     = list(),
+    baseline_by_traj = list()
   )
 
   # --- obtain time periods -------------------------------------------------
@@ -357,7 +271,7 @@ SRTMAnalyse <- function(data,
   df$dt01 <- dt01
   df$dt12 <- dt12
 
-  # Also create t0, t1, t2 depending on mode -------------------------------
+  # create t0, t1, t2 depending on mode
   if (identical(.srtm_time_state$mode, "dates") &&
       !is.null(.srtm_time_state$t0) &&
       !is.null(.srtm_time_state$t1) &&
@@ -368,8 +282,6 @@ SRTMAnalyse <- function(data,
     df$t2 <- .srtm_time_state$t2
 
   } else {
-    # duration mode or user-supplied numeric times:
-    # by convention: y1 at 0, y0 at -dt01, y2 at +dt12
     df$t0 <- -dt01
     df$t1 <- 0
     df$t2 <- dt12
@@ -394,12 +306,20 @@ SRTMAnalyse <- function(data,
     interactive = FALSE
   )
 
+  df$m12 <- calculateTrajectories(
+    data        = df,
+    y0          = y1_name,
+    y1          = y2_name,
+    time_period = dt12,
+    interactive = FALSE
+  )
+
   # ========================================================================
   # GROUPING LOGIC
   # ========================================================================
   if (group_first == "baseline") {
-    # 1) Base groups on y1
-    # 2) Within each baseGroup, trajectory groups on m01
+    # 1) Base groups on y1 (letters)
+    # 2) Within each baseGroup, trajectory groups on m01 (traj_label_scheme)
 
     rlang::inform(
       glue::glue("SRTMAnalyse: finding baseline groups on `{y1_name}`."),
@@ -416,19 +336,22 @@ SRTMAnalyse <- function(data,
     group_params_store$baseline_overall <- base_params
 
     rlang::inform(
-      glue::glue("SRTMAnalyse: assigning baseGroup using assignGroups() on `{y1_name}`."),
+      glue::glue("SRTMAnalyse: assigning baseGroup using assignGroups() on `{y1_name}` (letters)."),
       class = "srtm_analyse_progress"
     )
 
     df$baseGroup <- assignGroups(
       data         = df,
       group_params = base_params,
-      interactive  = interactive
+      interactive  = interactive,
+      label_scheme = "letters"
     )
     df$baseGroup <- factor(as.character(df$baseGroup), ordered = TRUE)
 
     rlang::inform(
-      "SRTMAnalyse: now finding trajectory groups (trajGroup) within each baseGroup using `m01`.",
+      glue::glue(
+        "SRTMAnalyse: now finding trajectory groups (trajGroup) within each baseGroup using `m01` and label_scheme = '{traj_label_scheme}'."
+      ),
       class = "srtm_analyse_progress"
     )
 
@@ -477,7 +400,7 @@ SRTMAnalyse <- function(data,
 
         rlang::inform(
           glue::glue(
-            "  Calling assignGroups() for trajGroups in baseGroup '{current_bg}' (label_scheme = 'arrows')."
+            "  Calling assignGroups() for trajGroups in baseGroup '{current_bg}' (label_scheme = '{traj_label_scheme}')."
           ),
           class = "srtm_analyse_progress"
         )
@@ -486,16 +409,14 @@ SRTMAnalyse <- function(data,
           data         = .x,
           group_params = traj_params,
           interactive  = interactive,
-          label_scheme = "arrows"
+          label_scheme = "letters"
         )
 
-        # return as *character* to avoid incompatible ordered factors
         .x$trajGroup <- as.character(.x$trajGroup)
         .x
       }) %>%
       dplyr::ungroup()
 
-    # now standardise trajGroup globally as an ordered factor
     df$trajGroup <- factor(
       df$trajGroup,
       levels  = sort(unique(df$trajGroup)),
@@ -505,11 +426,13 @@ SRTMAnalyse <- function(data,
     group_params_store$traj_by_base <- traj_params_by_base
 
   } else { # group_first == "slope"
-    # 1) Trajectory groups on m01
-    # 2) Within each trajGroup, baseline groups on y1
+    # 1) Trajectory groups on m01 (traj_label_scheme)
+    # 2) Within each trajGroup, baseline groups on y1 (letters)
 
     rlang::inform(
-      "SRTMAnalyse: finding trajectory groups (trajGroup) on `m01` for the whole sample.",
+      glue::glue(
+        "SRTMAnalyse: finding trajectory groups (trajGroup) on `m01` for the whole sample (label_scheme = '{traj_label_scheme}')."
+      ),
       class = "srtm_analyse_progress"
     )
 
@@ -523,19 +446,22 @@ SRTMAnalyse <- function(data,
     group_params_store$traj_overall <- traj_params_all
 
     rlang::inform(
-      "SRTMAnalyse: assigning trajGroup using assignGroups() with label_scheme = 'arrows'.",
+      "SRTMAnalyse: assigning trajGroup using assignGroups().",
       class = "srtm_analyse_progress"
     )
 
     df$trajGroup <- assignGroups(
       data         = df,
       group_params = traj_params_all,
-      interactive  = interactive
+      interactive  = interactive,
+      label_scheme = "letters"
     )
     df$trajGroup <- factor(as.character(df$trajGroup), ordered = TRUE)
 
     rlang::inform(
-      "SRTMAnalyse: now finding baseline groups (baseGroup) within each trajGroup using `y1`.",
+      glue::glue(
+        "SRTMAnalyse: now finding baseline groups (baseGroup) within each trajGroup using `{y1_name}` (letters)."
+      ),
       class = "srtm_analyse_progress"
     )
 
@@ -584,7 +510,7 @@ SRTMAnalyse <- function(data,
 
         rlang::inform(
           glue::glue(
-            "  Calling assignGroups() for baseGroups in trajGroup '{current_tg}'."
+            "  Calling assignGroups() for baseGroups in trajGroup '{current_tg}' (letters)."
           ),
           class = "srtm_analyse_progress"
         )
@@ -592,7 +518,8 @@ SRTMAnalyse <- function(data,
         .x$baseGroup <- assignGroups(
           data         = .x,
           group_params = base_params,
-          interactive  = interactive
+          interactive  = interactive,
+          label_scheme = "letters"
         )
 
         .x$baseGroup <- as.character(.x$baseGroup)
@@ -609,13 +536,14 @@ SRTMAnalyse <- function(data,
     group_params_store$baseline_by_traj <- base_params_by_traj
   }
 
-  # after trajGroup has been assigned compute labels
+  # --- compute trajType using chosen trajectory label scheme ---------------
   df$trajType <- srtm_compute_trajType(
     data         = df,
     slope_col    = "m01",
     group_col    = "trajGroup",
-    label_scheme = "arrows",  # or "signs"/"text" later
-    dt01         = dt01
+    label_scheme = traj_label_scheme,
+    dt01         = dt01,
+    outcome_cols = c(y0_name, y1_name, y2_name)
   )
 
   # --- fit group-specific linear models and compute exp_y2 -----------------
@@ -646,7 +574,15 @@ SRTMAnalyse <- function(data,
     obs        = y2_name,
     exp        = "exp_y2",
     baseGroups = "baseGroup",
-    trajGroups = "trajGroup"
+    trajGroups = "trajType"
+  )
+
+  res2 <- compareSlopes(
+    data       = df,
+    obs        = "m12",
+    exp        = "m01",
+    baseGroups = "baseGroup",
+    trajGroups = "trajType"
   )
 
   # --- group-level summaries -----------------------------------------------
@@ -660,21 +596,22 @@ SRTMAnalyse <- function(data,
     obs        = y2_name,
     exp        = "exp_y2",
     base_group = "baseGroup",
-    traj_group = "trajGroup",
+    traj_group = "trajType",
     drop       = TRUE
   )
 
   # --- assemble settings and pull slope thresholds -------------------------
   settings <- list(
-    y0          = y0_name,
-    y1          = y1_name,
-    y2          = y2_name,
-    id_col      = id_col,
-    time01      = dt01,
-    time12      = dt12,
-    group_first = group_first,
-    time_mode   = .srtm_time_state$mode        %||% "duration",
-    time_unit   = .srtm_time_state$unit_label  %||% "Time units"
+    y0               = y0_name,
+    y1               = y1_name,
+    y2               = y2_name,
+    id_col           = id_col,
+    time01           = dt01,
+    time12           = dt12,
+    group_first      = group_first,
+    traj_label_scheme = traj_label_scheme,
+    time_mode        = .srtm_time_state$mode       %||% "duration",
+    time_unit        = .srtm_time_state$unit_label %||% "Time units"
   )
 
   if (identical(.srtm_time_state$mode, "dates")) {
@@ -685,14 +622,15 @@ SRTMAnalyse <- function(data,
     )
   }
 
-  # store thresholds if available
   thr_attr <- attr(df$trajType, "srtm_slope_thresholds", exact = TRUE)
   if (!is.null(thr_attr)) {
     settings$trajThresholds <- thr_attr
   }
+
   # --- assemble result object ----------------------------------------------
   out <- list(
     Comparisons  = res,
+    Slope_Comparisons = res2,
     GroupSummary = group_summary,
     data         = df,
     settings     = settings,

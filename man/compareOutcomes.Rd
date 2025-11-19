@@ -9,7 +9,7 @@ compareOutcomes(
   obs = y2,
   exp = exp_y2,
   baseGroups = baseGroup,
-  trajGroups = trajGroup
+  trajGroups = trajType
 )
 }
 \arguments{

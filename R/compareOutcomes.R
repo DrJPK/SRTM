@@ -176,7 +176,7 @@ compareOutcomes <- function(data,
                             obs        = y2,
                             exp        = exp_y2,
                             baseGroups = baseGroup,
-                            trajGroups = trajGroup) {
+                            trajGroups = trajType) {
 
   # --- basic checks --------------------------------------------------------
   if (!is.data.frame(data)) {
@@ -229,73 +229,11 @@ compareOutcomes <- function(data,
     df[[traj_name]] <- factor(df[[traj_name]])
   }
 
-  # --- per-group paired comparisons via obs - exp --------------------------
-  out <- df %>%
-    dplyr::group_by(
-      .data[[base_name]],
-      .data[[traj_name]]
-    ) %>%
-    dplyr::group_modify(function(.x, .g) {
-
-      diffs <- .x[[obs_name]] - .x[[exp_name]]
-      diffs <- diffs[is.finite(diffs)]
-
-      n_diff <- length(diffs)
-
-      # too few observations -> no test
-      if (n_diff < 2L) {
-        return(tibble::tibble(
-          t_value  = NA_real_,
-          diff     = NA_real_,
-          p        = NA_real_,
-          pretty_p = NA_character_,
-          df       = NA_real_
-        ))
-      }
-
-      # constant differences: mean well-defined, t-test undefined
-      if (length(unique(diffs)) < 2L) {
-        mean_diff <- mean(diffs)
-
-        return(tibble::tibble(
-          t_value  = NA_real_,
-          diff     = mean_diff,
-          p        = NA_real_,
-          pretty_p = NA_character_,
-          df       = n_diff - 1
-        ))
-      }
-
-      tt   <- stats::t.test(diffs, mu = 0)
-      pval <- tt$p.value
-
-      pretty_p <- if (is.na(pval)) {
-        NA_character_
-      } else if (pval < 1e-4) {
-        "<.0001"
-      } else {
-        formatC(pval, digits = 3, format = "fg")
-      }
-
-      tibble::tibble(
-        t_value  = unname(tt$statistic),
-        diff     = unname(tt$estimate),   # mean(obs - exp)
-        p        = pval,
-        pretty_p = pretty_p,
-        df       = unname(tt$parameter)
-      )
-    }) %>%
-    dplyr::ungroup()
-
-  # standardise column order; the grouping columns keep their original names
-  out %>%
-    dplyr::select(
-      !!base_name,
-      !!traj_name,
-      t_value,
-      diff,
-      p,
-      pretty_p,
-      df
-    )
+  .srtm_compare_diffs(
+    df        = df,
+    obs_name  = obs_name,
+    exp_name  = exp_name,
+    base_name = base_name,
+    traj_name = traj_name
+  )
 }

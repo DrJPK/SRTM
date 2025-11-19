@@ -13,6 +13,7 @@ SRTMAnalyse(
   time01 = NULL,
   time12 = NULL,
   group_first = c("slope", "baseline"),
+  traj_label_scheme = c("arrows", "signs", "text"),
   interactive = TRUE
 )
 }
@@ -65,6 +66,25 @@ trajectory group.
 This allows users to emphasise either initial status (\emph{baseline
 first}) or early change (\emph{slope first}) in the grouping structure.}
 
+\item{traj_label_scheme}{Character string specifying the labelling scheme
+to use for \emph{trajectory} groups and for \code{trajType}. Must be one
+of \code{"arrows"}, \code{"signs"}, or \code{"text"}:
+\itemize{
+\item \code{"arrows"}: uses arrow glyphs such as \code{"↟"}, \code{"↑"},
+      \code{"→"}, \code{"↓"}, \code{"↡"} (with suffixes like \code{"_a"}
+when multiple distinct groups share the same conceptual rank).
+\item \code{"signs"}: uses sign labels such as \code{"++"}, \code{"+"},
+\code{"—"}, \code{"-"}, \code{"--"} (again with suffixes where
+needed).
+\item \code{"text"}: uses textual labels corresponding to the internal
+trajectory ranks: \code{"steep_pos"}, \code{"shallow_pos"},
+\code{"flat"}, \code{"shallow_neg"}, \code{"steep_neg"} (with
+suffixes).
+}
+Baseline groups (\code{baseGroup}) are always labelled with letters
+(\code{"A"}, \code{"B"}, …); the letter scheme is never used for
+trajectory groups.}
+
 \item{interactive}{Logical. If \code{TRUE} (default), the function is
 allowed to use interactive helpers:
 \itemize{
@@ -83,13 +103,13 @@ An object of class \code{"srtm_analysis"}, which is a named list
 with the following components:
 \describe{
 \item{Comparisons}{A tibble returned by \code{\link{compareOutcomes}()},
-containing one row per baseline × trajectory group with t-tests of
-observed vs expected outcomes at \code{y2}.}
+containing one row per baseline × trajectory \emph{type} with t-tests
+of observed vs expected outcomes at \code{y2}.}
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{\\item\{GroupSummary\}\{A tibble returned by
   \code{\link{summariseGroupOutcomes}()}, providing descriptive
   statistics (e.g., group sizes, means, expected values) for each
-  baseline × trajectory group.\}
+  baseline × trajectory type.\}
 
 \\item\{data\}\{The original data augmented with additional columns used in
   the SRMT analysis, including (but not limited to):
@@ -98,13 +118,13 @@ observed vs expected outcomes at \code{y2}.}
     \\item \code{dt01} and \code{dt12}: time intervals between
       \code{y0}–\code{y1} and \code{y1}–\code{y2},
     \\item \code{t0}, \code{t1}, \code{t2}: time positions for each
-      occasion (either numeric, with \code{t1 = 0}, or Dates in "dates"
-      mode),
+      occasion,
     \\item \code{m01}: the slope between \code{y0} and \code{y1},
-    \\item \code{baseGroup}: baseline group membership,
-    \\item \code{trajGroup}: trajectory group membership,
-    \\item \code{trajType}: a labelled trajectory type derived from
-      \code{m01} and \code{trajGroup},
+    \\item \code{baseGroup}: baseline group membership (letters),
+    \\item \code{trajGroup}: trajectory group membership (internal),
+    \\item \code{trajType}: a human-readable trajectory type label
+      derived from \code{m01} and \code{trajGroup}, using
+      \code{traj_label_scheme},
     \\item \code{exp_y2}: the expected post score from group-specific
       linear models.
   \}\}
@@ -118,6 +138,8 @@ observed vs expected outcomes at \code{y2}.}
     \\item \code{time01}, \code{time12}: the numeric time intervals used,
     \\item \code{group_first}: the grouping order (\code{"baseline"} or
       \code{"slope"}),
+    \\item \code{traj_label_scheme}: the scheme used for trajectory
+      labels,
     \\item \code{time_mode}: \code{"duration"} or \code{"dates"}
       depending on how timing was specified,
     \\item \code{time_unit}: a label for the time units (e.g. "days",
@@ -146,9 +168,6 @@ observed vs expected outcomes at \code{y2}.}
 }\if{html}{\out{</div>}}
 
 }
-
-The object can be inspected directly, or passed to plot/summary methods
-(if provided) to generate visualisations and reports.
 }
 \description{
 \code{SRTMAnalyse()} is the main entry point for the SRTM package. Given repeated
@@ -173,118 +192,7 @@ contains:
 \item the augmented analysis data (with IDs, time variables, slopes,
 groups, expected outcomes, etc.),
 \item group-level comparisons of observed vs expected outcomes,
-\item compact summaries for each baseline × trajectory group, and
+\item compact summaries for each baseline × trajectory type, and
 \item settings and grouping parameters used to construct the model.
 }
-}
-\section{Workflow}{
-
-
-Internally, \code{SRTMAnalyse()} proceeds through the following stages:
-\enumerate{
-\item \strong{Time setup}:
-\itemize{
-\item Resets the internal time state via
-\code{\link{srtm_reset_time_state}()}.
-\item Obtains \code{dt01} and \code{dt12} either from
-\code{time01}/\code{time12} or interactively via
-\code{\link{getTimePeriod}()}.
-\item Constructs \code{t0}, \code{t1}, \code{t2} as either numeric
-times (with \code{t1 = 0}, \code{t0 = -dt01}, \code{t2 = dt12}) or,
-in dates mode, as the original Historical/Pre/Post dates.
-}
-
-\item \strong{Slope calculation}:
-\itemize{
-\item Computes \code{m01} (the slope between \code{y0} and
-\code{y1}) using \code{\link{calculateTrajectories}()}.
-}
-
-\item \strong{Grouping}:
-\itemize{
-\item If \code{group_first = "baseline"}:
-\enumerate{
-\item Use \code{\link{findGroups}()} on \code{y1} for the whole
-sample to define baseline groups.
-\item Use \code{\link{assignGroups}()} to assign \code{baseGroup}
-to each individual.
-\item Within each \code{baseGroup}, use \code{findGroups} on
-\code{m01} and \code{assignGroups} to create trajectory groups
-(\code{trajGroup}), typically labelled using an arrow-based
-scheme.
-}
-\item If \code{group_first = "slope"}:
-\enumerate{
-\item Use \code{findGroups} on \code{m01} for the whole sample to
-define trajectory groups.
-\item Use \code{assignGroups} to assign \code{trajGroup} to each
-individual.
-\item Within each \code{trajGroup}, use \code{findGroups} on
-\code{y1} and \code{assignGroups} to create baseline groups
-(\code{baseGroup}).
-}
-}
-
-\item \strong{Trajectory labelling}:
-\itemize{
-\item Calls \code{\link{srtm_compute_trajType}()} to construct
-\code{trajType}, a human-readable label for trajectory patterns
-based on \code{m01}, \code{trajGroup}, and the time interval
-\code{dt01}.
-}
-
-\item \strong{Outcome modelling and comparison}:
-\itemize{
-\item Fits group-specific linear models and computes expected post
-values \code{exp_y2} via \code{\link{predictPostResponse}()}.
-\item Runs \code{\link{compareOutcomes}()} to compare observed
-\code{y2} with \code{exp_y2} within each baseline × trajectory
-group using paired t-tests.
-\item Summarises group outcomes with
-\code{\link{summariseGroupOutcomes}()}.
-}
-}
-}
-
-\examples{
-\dontrun{
-# Basic usage with a three-time-point dataset
-library(dplyr)
-
-# Assume `SRTM_student_attitude_data` has columns y0, y1, y2 and participantID
-data("SRTM_student_attitude_data")
-
-fit <- SRTMAnalyse(
-  data        = SRTM_student_attitude_data,
-  y0          = y0,
-  y1          = y1,
-  y2          = y2,
-  id_col      = "participantID",
-  group_first = "baseline",
-  interactive = TRUE
-)
-
-# Group-level comparisons of observed vs expected post scores
-fit$Comparisons
-
-# Group-level descriptive summaries
-fit$GroupSummary
-
-# Augmented analysis data with groups and expected outcomes
-dplyr::glimpse(fit$data)
-
-# Access analysis settings
-fit$settings
-}
-
-}
-\seealso{
-\code{\link{calculateTrajectories}()},
-\code{\link{findGroups}()},
-\code{\link{assignGroups}()},
-\code{\link{getTimePeriod}()},
-\code{\link{compareOutcomes}()},
-\code{\link{summariseGroupOutcomes}()},
-\code{\link{srtm_compute_trajType}()},
-\code{\link{predictPostResponse}()}.
 }

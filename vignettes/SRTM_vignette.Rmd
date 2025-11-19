@@ -1,0 +1,189 @@
+---
+title: "Getting Started with SRTM"
+author: "SRTM package"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with SRTM}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Introduction
+
+The **SRTM** (Self-Referenced Trajectory Modelling) package provides tools
+for evaluating change in real classrooms by treating **each student as their
+own control**.
+
+Rather than relying on randomised control trials (RCTs), SRTM uses three
+measurement occasions
+
+- `y0`: historical (pre-pre) or background measure  
+- `y1`: baseline or pre-influence measure  
+- `y2`: post-influence measure  
+
+to estimate what would likely have happened for each student **if nothing new
+had happened**, and then compare this to what actually happened.
+
+This vignette walks through a quick, teacher-friendly workflow using the
+included synthetic example data.
+
+# 1. Setup
+
+Make sure the package is installed and loaded.
+
+```{r, eval = FALSE}
+# install.packages("remotes")
+remotes::install_github("DrJPK/SRTM")
+```
+
+```{r, message = FALSE}
+library(SRTM)
+```
+
+# 2. Data: synthetic example
+
+The package includes a synthetic dataset that mimics real classroom data.
+
+```{r}
+data("SRTM_synth_data")
+x <- SRTM_synth_data
+
+str(x)
+head(x)
+```
+
+You should see at least three numeric columns (`y0`, `y1`, `y2`) and an ID
+column (e.g. `ID` or `participantID`).
+
+If you have your own Excel file in the appropriate format, you can instead use:
+
+```{r, eval = FALSE}
+x <- importSRTMExcel("my_class_data.xlsx")
+```
+
+# 3. Running SRTMAnalyse()
+
+The main entry point is `SRTMAnalyse()`. For basic usage with the demo data:
+
+```{r}
+res <- SRTMAnalyse(
+  data        = x,
+  y0          = y0,
+  y1          = y1,
+  y2          = y2,
+  id_col      = "ID",
+  group_first = "baseline",
+  interactive = FALSE
+)
+```
+
+In interactive use (e.g. in the R console), you can set `interactive = TRUE`.
+This will:
+
+- prompt for time intervals or dates,  
+- show plots of distributions,  
+- and ask you to confirm grouping decisions.
+
+In vignette mode we set `interactive = FALSE` so the document can knit
+non-interactively.
+
+You can inspect the resulting object:
+
+```{r}
+res
+str(res, max.level = 1)
+```
+
+The object `res` has class `"srtm_analysis"` and contains:
+
+- `res$data`: the augmented analysis dataset  
+- `res$Comparisons`: observed vs expected comparisons by group  
+- `res$GroupSummary`: descriptive summaries by group  
+- `res$settings`: analysis settings (time intervals, grouping order, etc.)  
+- `res$group_params`: details of the group-finding steps  
+
+# 4. Visualising results
+
+If a plotting method is available, you can call:
+
+```{r, eval = FALSE}
+plot(res)
+```
+
+Typical plots include:
+
+- trajectories for different groups across `y0`, `y1`, `y2`
+- observed vs expected post scores by baseline × trajectory group
+
+These help you see at a glance which groups are doing better or worse than
+expected.
+
+# 5. Summaries and comparisons
+
+The summary method provides a compact overview:
+
+```{r}
+summary(res)
+```
+
+You can also work directly with the core tables:
+
+```{r}
+res$Comparisons
+res$GroupSummary
+```
+
+- `Comparisons` contains, for each baseline × trajectory group:
+  - mean difference between observed and expected `y2`
+  - t-statistics and p-values
+- `GroupSummary` contains descriptive information (group sizes, means, etc.)
+
+These tables are designed to be readable and easy to export to reports or
+spreadsheets.
+
+# 6. Conceptual sketch
+
+SRTM is built around the idea that each student can serve as their **own
+control**:
+
+1. Use `y0` and `y1` to estimate each student's **personal trajectory** before
+   the influence (their historical-to-baseline slope).
+2. Assume that, over a short enough time window, this trajectory would have
+   continued similarly if nothing new had happened.
+3. Project this trajectory forward to obtain an **expected** `y2` for each
+   student.
+4. Compare the expected `y2` to the **observed** `y2`.
+5. Group students by:
+   - their pre-influence trajectory (e.g. declining, stable, improving), and
+   - their baseline level (e.g. low, medium, high),
+   then interpret and test differences at group level.
+
+The goal is not to identify a single “best” practice, but to support teachers
+and researchers in making **professional judgements** based on transparent,
+locally meaningful evidence.
+
+# 7. Next steps
+
+From here you can:
+
+- replace the example data with your own using `importSRTMExcel()`,
+- change the grouping order via `group_first = "slope"`,
+- explore plotting and reporting options tailored to your context.
+
+For more detail on individual functions, see:
+
+- `?SRTMAnalyse`
+- `?compareOutcomes`
+- `?summariseGroupOutcomes`
+- `?SRTM_student_attitude_data` (example longitudinal dataset)
+
